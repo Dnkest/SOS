@@ -30,12 +30,16 @@
 #include "network.h"
 #include "frame_table.h"
 #include "drivers/uart.h"
+#include "drivers/serial.h"
 #include "ut.h"
 #include "vmem_layout.h"
 #include "mapping.h"
 #include "elfload.h"
 #include "syscalls.h"
 #include "tests.h"
+#include "proc.h"
+#include "syscall.h"
+#include "addrspace.h"
 
 #include <aos/vsyscall.h>
 
@@ -51,9 +55,13 @@
 #define IRQ_EP_BADGE         BIT(seL4_BadgeBits - 1ul)
 #define IRQ_IDENT_BADGE_BITS MASK(seL4_BadgeBits - 1ul)
 
-#define TTY_NAME             "tty_test"
+#define TTY_NAME             "sosh"
 #define TTY_PRIORITY         (0)
 #define TTY_EP_BADGE         (101)
+
+/* The number of additional stack pages to provide to the initial
+ * process */
+#define INITIAL_PROCESS_EXTRA_STACK_PAGES 4
 
 /*
  * A dummy starting syscall
@@ -72,20 +80,7 @@ extern void (__register_frame)(void *);
 static cspace_t cspace;
 
 /* the one process we start */
-static struct {
-    ut_t *tcb_ut;
-    seL4_CPtr tcb;
-    ut_t *vspace_ut;
-    seL4_CPtr vspace;
-
-    ut_t *ipc_buffer_ut;
-    seL4_CPtr ipc_buffer;
-
-    cspace_t cspace;
-
-    ut_t *stack_ut;
-    seL4_CPtr stack;
-} tty_test_process;
+static pcb_t tty_test_process;
 
 void handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args)
 {
@@ -146,7 +141,10 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else if (label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from tty_test! */
-            handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
+            //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
+            sos_handle_syscall();
+        } else if (label == seL4_Fault_VMFault) {
+            sos_handle_page_fault(seL4_GetMR(seL4_VMFault_Addr));
         } else {
             /* some kind of fault */
             debug_print_fault(message, TTY_NAME);
@@ -296,8 +294,46 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* mark the slot as free */
     cspace_free_slot(cspace, local_stack_cptr);
 
+    /* Exend the stack with extra pages */
+    for (int page = 0; page < INITIAL_PROCESS_EXTRA_STACK_PAGES; page++) {
+        stack_bottom -= PAGE_SIZE_4K;
+        frame_ref_t frame = alloc_frame();
+        if (frame == NULL_FRAME) {
+            ZF_LOGE("Couldn't allocate additional stack frame");
+            return 0;
+        }
+
+        /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
+        seL4_CPtr frame_cptr = cspace_alloc_slot(cspace);
+        if (local_stack_cptr == seL4_CapNull) {
+            free_frame(frame);
+            ZF_LOGE("Failed to alloc slot for stack extra stack frame");
+            return 0;
+        }
+
+        /* copy the stack frame cap into the slot */
+        err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
+        if (err != seL4_NoError) {
+            cspace_free_slot(cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Failed to copy cap");
+            return 0;
+        }
+
+        err = map_frame(cspace, frame_cptr, tty_test_process.vspace, stack_bottom,
+                        seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        if (err != 0) {
+            cspace_delete(cspace, frame_cptr);
+            cspace_free_slot(cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Unable to map extra stack frame for user app");
+            return 0;
+        }
+    }
+
     return stack_top;
 }
+
 
 /* Start the first process, and return true if successful
  *
@@ -378,6 +414,11 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
 
     /* Provide a name for the thread -- Helpful for debugging */
     NAME_THREAD(tty_test_process.tcb, app_name);
+    
+    tty_test_process.global_cspace = &cspace;
+    addrspace_t *as = as_create();
+    tty_test_process.as = as;
+    set_cur_proc(&tty_test_process);
 
     /* parse the cpio image */
     ZF_LOGI("\nStarting \"%s\"...\n", app_name);
@@ -419,6 +460,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
         .sp = sp,
     };
     printf("Starting ttytest at %p\n", (void *) context.pc);
+
     err = seL4_TCB_WriteRegisters(tty_test_process.tcb, 1, 0, 2, &context);
     ZF_LOGE_IF(err, "Failed to write registers");
     return err == seL4_NoError;
@@ -512,6 +554,12 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Initialise the network hardware. */
     printf("Network init\n");
     network_init(&cspace, timer_vaddr);
+
+    /* Initialise the serial driver. */
+    printf("Serial driver init\n");
+    serial_driver_init();
+
+    syscall_handlers_init();
 
     /* Initialises the timer */
     printf("Timer init\n");

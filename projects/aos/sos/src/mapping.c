@@ -107,13 +107,16 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
         switch (failed) {
         case SEL4_MAPPING_LOOKUP_NO_PT:
             err = retype_map_pt(cspace, vspace, vaddr, ut->cap, slot);
+            //seL4_DebugPutChar('1');
             break;
         case SEL4_MAPPING_LOOKUP_NO_PD:
             err = retype_map_pd(cspace, vspace, vaddr, ut->cap, slot);
+            //seL4_DebugPutChar('2');
             break;
 
         case SEL4_MAPPING_LOOKUP_NO_PUD:
             err = retype_map_pud(cspace, vspace, vaddr, ut->cap, slot);
+            //seL4_DebugPutChar('3');
             break;
         }
 

@@ -17,6 +17,8 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <assert.h>
+#include <sel4/sel4.h>
+
 
 /*
  * Statically allocated morecore area.
@@ -28,8 +30,8 @@
 char morecore_area[MORECORE_AREA_BYTE_SIZE];
 
 /* Pointer to free space in the morecore area. */
-static uintptr_t morecore_base = (uintptr_t) &morecore_area;
-static uintptr_t morecore_top = (uintptr_t) &morecore_area[MORECORE_AREA_BYTE_SIZE];
+static uintptr_t morecore_base = (uintptr_t) 0x710000000000;
+static uintptr_t morecore_top = (uintptr_t) 0x7FFFFFFFFFFF;
 
 /* Actual morecore implementation
    returns 0 if failure, returns newbrk if success.
@@ -40,11 +42,12 @@ long sys_brk(va_list ap)
 
     uintptr_t ret;
     uintptr_t newbrk = va_arg(ap, uintptr_t);
+    //printf("brk: %p   base: %p   top: %p\n", newbrk, morecore_base, morecore_top);
 
     /*if the newbrk is 0, return the bottom of the heap*/
     if (!newbrk) {
         ret = morecore_base;
-    } else if (newbrk < morecore_top && newbrk > (uintptr_t)&morecore_area[0]) {
+    } else if (newbrk < morecore_top && newbrk > morecore_base) {
         ret = morecore_base = newbrk;
     } else {
         ret = 0;

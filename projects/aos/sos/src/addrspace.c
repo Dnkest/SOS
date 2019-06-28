@@ -1,159 +1,99 @@
 #include "addrspace.h"
-#include "frame_table.h"
+#include "proc.h"
 
-typedef struct page_table {
-    frame_ref_t *frames;
-    seL4_CPtr page_table_cptr;
-} page_table_t;
-
-typedef struct page_directory {
-    page_table_t **pts;
-    seL4_CPtr page_directory_cptr;
-} page_directory_t;
-
-typedef struct page_upper_directory {
-    page_directory_t **pds;
-    seL4_CPtr page_upper_directory_cptr;
-} page_upper_directory_t;
-
-typedef struct addrspace {
-    page_upper_directory_t **puds;
-    cspace_t *cspace;
-    seL4_CPtr vspace;
-} addrspace_t;
+#define MASK 0xFFFFFFFFF000
 
 uintptr_t as_alloc_one_page()
 {
-    uintptr_t ret = (uintptr_t)frame_data(alloc_frame());
+    frame_ref_t frame = alloc_frame();
+    if (frame == NULL_FRAME) {
+        ZF_LOGE("Couldn't allocate additional frame");
+        return 0;
+    }
+    void *ret = (void *)frame_data(frame);
     memset(ret, 0, BIT(seL4_PageBits));
-    return ret;
+    return (uintptr_t)ret;
 }
 
-/* Helper function to allocate 4kiB of specfied type. */
-seL4_CPtr alloc_type(cspace_t *cspace, seL4_Word type);
-
-addrspace_t *as_create(cspace_t *cspace, seL4_CPtr vspace)
+void as_free(uintptr_t vaddr)
 {
-    addrspace_t *as = as_alloc_one_page();
-    if (as == NULL) {
-        return NULL;
-	}
+    free_frame_address((unsigned char *)vaddr);
+}
 
-    as->puds = as_alloc_one_page();
-    as->cspace = cspace;
-    as->vspace = vspace;
+addrspace_t *as_create()
+{
+    addrspace_t *as = (addrspace_t *)as_alloc_one_page();
 
+    as->as_page_table = as_page_table_init();
+    
     return as;
 }
 
-seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace, page_table_t *pt, seL4_Word vaddr)
+as_region_t *as_create_region(seL4_Word vaddr, size_t memsize, bool read, bool write, bool execute)
 {
-    seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageTableObject);
-    if (cptr == NULL) {
-        ZF_LOGE("Failed to alloc 4k of specific type");
-    }
+    as_region_t *region = (as_region_t *)as_alloc_one_page();
 
-    seL4_Error error = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, seL4_ARM_Default_VMAttributes);
-    pt->page_table_cptr = cptr;
-    return error;
+    region->vaddr = vaddr;
+    region->memsize = memsize;
+    region->read = read;
+    region->write = write;
+    region->execute = execute;
+
+    return region;
 }
 
-seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace, page_directory_t *pd, seL4_Word vaddr)
+bool as_check_valid_region(addrspace_t *as, seL4_Word fault_address)
 {
-    int index = (vaddr >> 12) & 0b111111111;
-    if (!pd->pts[index]) {
-        /* allocate next level page table if not exists. */
-        page_table_t *p_pt = as_alloc_one_page();
-        pd->pts[index] = p_pt;
-
-        seL4_Error error = map_pt(cspace, vspace, p_pt, vaddr);
-        if (error) {
-            return error;
-        }
-
-        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject);
-        if (cptr == NULL) {
-            ZF_LOGE("Failed to alloc 4k of specific type");
-        }
-
-        error = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, seL4_ARM_Default_VMAttributes);
-        pd->page_directory_cptr = cptr;
-        return error;
-    }
-    /* already mapped. */
-    return 0;
+    // as_region_t *cur = as->regions;
+    // while (cur != NULL) {
+    //     if (fault_address >= cur->vaddr && fault_address < cur->vaddr + cur->memsize) {
+    //         return true;
+    //     }
+    //     cur = cur->next;
+    // }
+    // return false;
+    return true;
 }
 
-seL4_Error map_pud(cspace_t *cspace, seL4_CPtr vspace, page_upper_directory_t *pud, seL4_Word vaddr)
+void sos_handle_page_fault(seL4_Word fault_address)
 {
-    int index = (vaddr >> 21) & 0b111111111;
-    if (!pud->pds[index]) {
-        /* allocate next level page table if not exists. */
-        page_directory_t *p_pd = as_alloc_one_page();
-        pud->pds[index] = p_pd;
+    pcb_t *proc = get_cur_proc();
 
-        seL4_Error error = map_pd(cspace, vspace, p_pd, vaddr);
-        if (error) {
-            return error;
+    if (as_check_valid_region(proc->as, fault_address)) {
+        cspace_t *cspace = proc->global_cspace;
+        seL4_CPtr vspace = proc->vspace;
+
+        frame_ref_t frame = alloc_frame();
+        if (frame == NULL_FRAME) {
+            ZF_LOGE("Couldn't allocate additional frame");
+            //return seL4_NotEnoughMemory;
         }
 
-        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject);
-        if (cptr == NULL) {
-            ZF_LOGE("Failed to alloc 4k of specific type");
+        seL4_CPtr frame_cptr = cspace_alloc_slot(cspace);
+        if (frame_cptr == seL4_CapNull) {
+            free_frame(frame);
+            ZF_LOGE("Failed to alloc slot for frame");
+            //return seL4_NotEnoughMemory;
         }
 
-        error = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, seL4_ARM_Default_VMAttributes);
-        pud->page_upper_directory_cptr = cptr;
-        return error;
-    }
-    /* already mapped. */
-    return 0;
-}
-
-seL4_Error sos_map_frame(addrspace_t *as, cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace,
-                            seL4_Word vaddr, seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
-{
-    int index = (vaddr >> 30) & 0b111111111;
-    if (!as->puds[index]) {
-        /* allocate next level page table if not exists. */
-        page_upper_directory_t *p_pud = as_alloc_one_page();
-        as->puds[index] = as_alloc_one_page();
-
-        seL4_Error error = map_pud(as->cspace, as->vspace, p_pud, vaddr);
-        if (error) {
-            return error;
+        seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
+        if (err != seL4_NoError) {
+            cspace_free_slot(cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Failed to copy cap");
+            //return err;
+        }
+        err = sos_map_frame(cspace, vspace, frame_cptr, frame, proc->as->as_page_table,
+                    fault_address & MASK, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        if (err) {
+            cspace_delete(cspace, frame_cptr);
+            cspace_free_slot(cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Failed to copy cap");
         }
 
-        return seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-    }
-    /* already mapped. */
-    return 0;
-}
-
-seL4_CPtr alloc_type(cspace_t *cspace, seL4_Word type)
-{
-    /* Assume the error was because we are missing a paging structure */
-    ut_t *ut = ut_alloc_4k_untyped(NULL);
-    if (ut == NULL) {
-        ZF_LOGE("Out of 4k untyped");
-        return NULL;
+        seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
+        seL4_Reply(reply_msg);
     }
 
-    /* allocate a slot to retype the memory for object into */
-    seL4_CPtr cptr = cspace_alloc_slot(cspace);
-    if (cptr == seL4_CapNull) {
-        ut_free(ut);
-        ZF_LOGE("Failed to allocate slot");
-        return NULL;
-    }
-
-    /* now do the retype */
-    seL4_Error err = cspace_untyped_retype(cspace, ut->cap, cptr, type, seL4_PageBits);
-    ZF_LOGE_IFERR(err, "Failed retype untyped");
-    if (err != seL4_NoError) {
-        ut_free(ut);
-        cspace_free_slot(cspace, cptr);
-        return NULL;
-    }
-    return cptr;
 }

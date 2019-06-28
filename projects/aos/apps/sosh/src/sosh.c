@@ -29,6 +29,7 @@
 
 #define BUF_SIZ    6144
 #define MAX_ARGS   32
+#define SYSCALL_ENDPOINT_SLOT          (1)
 
 static int in;
 static sos_stat_t sbuf;
@@ -45,11 +46,32 @@ static size_t sos_debug_print(const void *vData, size_t count)
     return count;
 }
 
+static void thread_block(void)
+{
+    /* construct some info about the IPC message tty_test will send
+     * to sos -- it's 1 word long */
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 1);
+    /* Set the first word in the message to 0 */
+    seL4_SetMR(0, 99);
+    /* Now send the ipc -- call will send the ipc, then block until a reply
+     * message is received */
+    seL4_Call(SYSCALL_ENDPOINT_SLOT, tag);
+    /* Currently SOS does not reply -- so we never come back here */
+}
 
 size_t sos_write(void *vData, size_t count)
 {
-    // use the content of tty test for this
-    return sos_debug_print(vData, count);
+
+    seL4_SetMR(0, 2);
+    seL4_SetMR(1, count);
+    memcpy(&seL4_GetIPCBuffer()->msg[2], vData, count);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0,
+                                            0,
+                                            0,
+                                            seL4_MsgMaxLength);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return count;
 }
 
 size_t sos_read(void *vData, size_t count)
@@ -321,6 +343,24 @@ int main(void)
 {
     /* set up the c library. printf will not work before this is called */
     sosapi_init_syscall_table();
+    printf("\n[SOS Starting]\n");
+    
+    void *a = malloc(8);
+    printf("%p\n", a);
+    void *b = malloc(500);
+    printf("%p\n", b);
+    b = 0;
+    printf("%p\n", b);
+    void *d = 0x710000000000;
+    printf("%s\n", d);
+    for (int i = 0; i < 10; i++) {
+        d += 0x1000000;
+        printf("%s\n", d);
+    }
+
+    void *c = malloc(500);
+    printf("%p\n", c);
+    thread_block();
 
     char buf[BUF_SIZ];
     char *argv[MAX_ARGS];

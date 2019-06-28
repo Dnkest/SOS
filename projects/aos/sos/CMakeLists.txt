@@ -59,8 +59,14 @@ add_executable(
     src/sys/thread.c
     src/sys/time.c
     src/drivers/uart.c
+    src/drivers/serial.c
+    src/proc.c
+    src/syscall.c
     archive.o
     src/sos.lds
+    src/picoro.c
+    src/addrspace.c
+    src/pagetable.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

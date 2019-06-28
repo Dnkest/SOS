@@ -389,3 +389,11 @@ static seL4_ARM_Page alloc_frame_at(uintptr_t vaddr)
 
     return cptr;
 }
+
+void free_frame_address(unsigned char *frame)
+{
+    frame_ref_t frame_ref = ((void *)frame - (void *)frame_table.frame_data)/BIT(seL4_PageBits);
+    assert(frame_ref != NULL_FRAME);
+    assert(frame_ref < frame_table.capacity);
+    free_frame(frame_ref);
+}
