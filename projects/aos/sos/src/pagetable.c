@@ -87,7 +87,6 @@ seL4_Error map_frame_new(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 12) & 0b111111111;
     if (!pt->frames[index]) {
-
         seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
         if (err) {
             return err;
@@ -105,7 +104,6 @@ seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 21) & 0b111111111;
     if (!pd->pts[index]) {
-        //seL4_DebugPutChar('2');
         page_table_t *p_pt = pt_init();
 
         seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageTableObject);
@@ -135,7 +133,6 @@ seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 30) & 0b111111111;
     if (!pud->pds[index]) {
-
         page_directory_t *p_pd = pd_init();
 
         seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject);
@@ -166,7 +163,6 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
     int index = (vaddr >> 39) & 0b111111111;
     //printf("vaddr = %p, index = %d\n", vaddr, index);
     if (!as_page_table->puds[index]) {
-
         page_upper_directory_t *p_pud = pud_init();
 
         seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject);

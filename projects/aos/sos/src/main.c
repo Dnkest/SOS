@@ -246,24 +246,22 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         return 0;
     }
 
-    //printf("reached 1\n");
     /* Map in the stack frame for the user app */
-    //printf("reached 1->vaddr = %p\n", stack_bottom);
     err = sos_map_frame(cspace, tty_test_process.vspace, tty_test_process.stack, frame,
-                        get_cur_proc()->as->as_page_table, stack_bottom,
+                        tty_test_process.as->as_page_table, stack_bottom,
                     seL4_AllRights, seL4_ARM_Default_VMAttributes);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
         return 0;
     }
-//printf("reached 2\n");
+
     /* allocate a slot to duplicate the stack frame cap so we can map it into our address space */
     seL4_CPtr local_stack_cptr = cspace_alloc_slot(cspace);
     if (local_stack_cptr == seL4_CapNull) {
         ZF_LOGE("Failed to alloc slot for stack");
         return 0;
     }
-//printf("reached 3\n");
+
     /* copy the stack frame cap into the slot */
     err = cspace_copy(cspace, local_stack_cptr, cspace, tty_test_process.stack, seL4_AllRights);
     if (err != seL4_NoError) {
@@ -273,8 +271,12 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     }
 
     /* map it into the sos address space */
+
     err = map_frame(cspace, local_stack_cptr, local_vspace, local_stack_bottom, seL4_AllRights,
                     seL4_ARM_Default_VMAttributes);
+    // err = sos_map_frame(cspace, local_vspace, local_stack_cptr, frame,
+    //                     get_cur_proc()->as->as_page_table, stack_bottom,
+    //                 seL4_AllRights, seL4_ARM_Default_VMAttributes);
     if (err != seL4_NoError) {
         cspace_delete(cspace, local_stack_cptr);
         cspace_free_slot(cspace, local_stack_cptr);
@@ -356,7 +358,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
 
         // err = map_frame(cspace, frame_cptr, tty_test_process.vspace, stack_bottom,
         //                 seL4_AllRights, seL4_ARM_Default_VMAttributes);
-        err = sos_map_frame(cspace, tty_test_process.vspace, frame_cptr, frame, get_cur_proc()->as->as_page_table,
+        err = sos_map_frame(cspace, tty_test_process.vspace, frame_cptr, frame, tty_test_process.as->as_page_table,
                             stack_bottom, seL4_AllRights, seL4_ARM_Default_VMAttributes);
         if (err != 0) {
             cspace_delete(cspace, frame_cptr);
@@ -366,7 +368,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
     }
-    as_define_region(get_cur_proc()->as, stack_bottom, 5 * BIT(seL4_PageBits), 0b110);
+    as_define_region(tty_test_process.as, stack_bottom, 5 * BIT(seL4_PageBits), 0b110);
 
     return stack_top;
 }
@@ -455,7 +457,6 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     tty_test_process.global_cspace = &cspace;
     addrspace_t *as = as_create();
     tty_test_process.as = as;
-    set_cur_proc(&tty_test_process);
 
     /* parse the cpio image */
     ZF_LOGI("\nStarting \"%s\"...\n", app_name);
@@ -474,13 +475,13 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* define heap. */
-    as_define_region(get_cur_proc()->as, PROCESS_HEAP_BASE, PROCESS_STACK_BOTTOM-PROCESS_HEAP_BASE, 0b110);
+    as_define_region(tty_test_process.as, PROCESS_HEAP_BASE, PROCESS_STACK_BOTTOM-PROCESS_HEAP_BASE, 0b110);
 
     /* set up the stack */
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, &elf_file);
 
     /* load the elf image from the cpio file */
-    err = elf_load(&cspace, tty_test_process.vspace, &elf_file);
+    err = elf_load(tty_test_process.as, &cspace, tty_test_process.vspace, &elf_file);
     if (err) {
         ZF_LOGE("Failed to load elf image");
         return false;
@@ -500,6 +501,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
         .sp = sp,
     };
     printf("Starting ttytest at %p\n", (void *) context.pc);
+    set_cur_proc(&tty_test_process);
 
     err = seL4_TCB_WriteRegisters(tty_test_process.tcb, 1, 0, 2, &context);
     ZF_LOGE_IF(err, "Failed to write registers");
