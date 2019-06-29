@@ -26,7 +26,11 @@
 #define SOS_FRAME_DATA       (0x8200000000)
 
 /* Constants for how SOS will layout the address space of any processes it loads up */
-#define PROCESS_STACK_TOP   (0x90000000)
+#define PROCESS_HEAP_BASE       (0x700000000000)
+#define PROCESS_STACK_TOP       (0x800000000000)
+#define PROCESS_STACK_PAGES     5
+#define PROCESS_STACK_BOTTOM    (0x7fffffffb000)
+
 #define PROCESS_IPC_BUFFER  (0xA0000000)
 #define PROCESS_VMEM_START  (0xC0000000)
 

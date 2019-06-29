@@ -12,11 +12,10 @@
 #define USER_HEAP_TOP        (0x7fffffffffff)
 
 typedef struct as_region {
-    seL4_Word vaddr;
-    size_t memsize;
+    seL4_Word base;
+    seL4_Word top;
     bool read;
     bool write;
-    bool execute;
 
     struct as_region *next;
 } as_region_t;
@@ -34,7 +33,6 @@ void as_free(uintptr_t vaddr);
 
 addrspace_t *as_create();
 
-as_region_t *as_create_region(seL4_Word vaddr, size_t memsize, bool read, bool write, bool execute);
-void as_define_heap();
+void as_define_region(addrspace_t *as, seL4_Word vaddr, size_t memsize, unsigned long permissions);
 
-void sos_handle_page_fault(seL4_Word fault_address);
+bool sos_handle_page_fault(seL4_Word fault_address);

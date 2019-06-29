@@ -79,7 +79,7 @@ seL4_Error map_frame_new(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 12) & 0b111111111;
     if (!pt->frames[index]) {
-        seL4_DebugPutChar('1');
+        //seL4_DebugPutChar('1');
         seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
         if (err == seL4_DeleteFirst) {
             seL4_DebugPutChar('Q');
@@ -100,7 +100,7 @@ seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 21) & 0b111111111;
     if (!pd->pts[index]) {
-        seL4_DebugPutChar('2');
+        //seL4_DebugPutChar('2');
         page_table_t *p_pt = (page_table_t *)as_alloc_one_page();
         p_pt->frames = (frame_ref_t *)as_alloc_one_page();
 
@@ -135,7 +135,7 @@ seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace,
 {
     int index = (vaddr >> 30) & 0b111111111;
     if (!pud->pds[index]) {
-        seL4_DebugPutChar('3');
+        //seL4_DebugPutChar('3');
         page_directory_t *p_pd = (page_directory_t *)as_alloc_one_page();
         p_pd->pts = (page_table_t **)as_alloc_one_page();
 
@@ -205,7 +205,9 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
                         seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
 {
     int index = (vaddr >> 39) & 0b111111111;
+    //printf("vaddr = %p, index = %d\n", vaddr, index);
     if (!as_page_table->puds[index]) {
+
         page_upper_directory_t *p_pud = (page_upper_directory_t *)as_alloc_one_page();
         p_pud->pds = (page_directory_t **)as_alloc_one_page();
         seL4_CPtr cptr = alloc_type(as_page_table->list, cspace, seL4_ARM_PageUpperDirectoryObject);
@@ -224,6 +226,7 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
         return map_pd(cspace, vspace, frame_cap, frame_ref,
                     as_page_table->list, p_pud, vaddr, rights, attr);
     } else {
+        //seL4_DebugPutChar('K');
         return map_pd(cspace, vspace, frame_cap, frame_ref,
                     as_page_table->list, as_page_table->puds[index], vaddr, rights, attr);
     }

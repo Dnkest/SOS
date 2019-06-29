@@ -144,7 +144,14 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
             sos_handle_syscall();
         } else if (label == seL4_Fault_VMFault) {
-            sos_handle_page_fault(seL4_GetMR(seL4_VMFault_Addr));
+            if (!sos_handle_page_fault(seL4_GetMR(seL4_VMFault_Addr))) {
+                /* some kind of fault */
+                debug_print_fault(message, TTY_NAME);
+                /* dump registers too */
+                //debug_dump_registers(tty_test_process.tcb);
+
+                ZF_LOGF("Invalid region accessed!");
+            }
         } else {
             /* some kind of fault */
             debug_print_fault(message, TTY_NAME);
@@ -196,12 +203,12 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
  * start up and initialise the C library */
 static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, elf_t *elf_file)
 {
-    /* Create a stack frame */
-    tty_test_process.stack_ut = alloc_retype(&tty_test_process.stack, seL4_ARM_SmallPageObject, seL4_PageBits);
-    if (tty_test_process.stack_ut == NULL) {
-        ZF_LOGE("Failed to allocate stack");
-        return 0;
-    }
+    // /* Create a stack frame */
+    // tty_test_process.stack_ut = alloc_retype(&tty_test_process.stack, seL4_ARM_SmallPageObject, seL4_PageBits);
+    // if (tty_test_process.stack_ut == NULL) {
+    //     ZF_LOGE("Failed to allocate stack");
+    //     return 0;
+    // }
 
     /* virtual addresses in the target process' address space */
     uintptr_t stack_top = PROCESS_STACK_TOP;
@@ -217,21 +224,46 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         return 0;
     }
 
+    /* create slot for the frame to load the data into */
+    seL4_CPtr frame_cap = cspace_alloc_slot(cspace);
+    if (frame_cap == seL4_CapNull) {
+        ZF_LOGD("Failed to alloc slot");
+        return -1;
+    }
+
+    /* allocate the untyped for the loadees address space */
+    frame_ref_t frame = alloc_frame();
+    if (frame == NULL_FRAME) {
+        ZF_LOGD("Failed to alloc frame");
+        return 0;
+    }
+    tty_test_process.stack = frame_cap;
+
+    /* copy it */
+    seL4_Error err = cspace_copy(cspace, frame_cap, frame_table_cspace(), frame_page(frame), seL4_AllRights);
+    if (err != seL4_NoError) {
+        ZF_LOGD("Failed to untyped reypte");
+        return 0;
+    }
+
+    //printf("reached 1\n");
     /* Map in the stack frame for the user app */
-    seL4_Error err = map_frame(cspace, tty_test_process.stack, tty_test_process.vspace, stack_bottom,
-                               seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    //printf("reached 1->vaddr = %p\n", stack_bottom);
+    err = sos_map_frame(cspace, tty_test_process.vspace, tty_test_process.stack, frame,
+                        get_cur_proc()->as->as_page_table, stack_bottom,
+                    seL4_AllRights, seL4_ARM_Default_VMAttributes);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
         return 0;
     }
-
+//printf("reached 2\n");
     /* allocate a slot to duplicate the stack frame cap so we can map it into our address space */
     seL4_CPtr local_stack_cptr = cspace_alloc_slot(cspace);
     if (local_stack_cptr == seL4_CapNull) {
         ZF_LOGE("Failed to alloc slot for stack");
         return 0;
     }
-
+//printf("reached 3\n");
     /* copy the stack frame cap into the slot */
     err = cspace_copy(cspace, local_stack_cptr, cspace, tty_test_process.stack, seL4_AllRights);
     if (err != seL4_NoError) {
@@ -277,6 +309,8 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
 
     /* adjust the initial stack top */
     stack_top += (index * sizeof(seL4_Word));
+    // printf("stack_top------>%p\n", stack_top);
+    // printf("stack_bottom------>%p\n", stack_bottom);
 
     /* the stack *must* remain aligned to a double word boundary,
      * as GCC assumes this, and horrible bugs occur if this is wrong */
@@ -297,7 +331,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* Exend the stack with extra pages */
     for (int page = 0; page < INITIAL_PROCESS_EXTRA_STACK_PAGES; page++) {
         stack_bottom -= PAGE_SIZE_4K;
-        frame_ref_t frame = alloc_frame();
+        frame = alloc_frame();
         if (frame == NULL_FRAME) {
             ZF_LOGE("Couldn't allocate additional stack frame");
             return 0;
@@ -320,8 +354,10 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
 
-        err = map_frame(cspace, frame_cptr, tty_test_process.vspace, stack_bottom,
-                        seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        // err = map_frame(cspace, frame_cptr, tty_test_process.vspace, stack_bottom,
+        //                 seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        err = sos_map_frame(cspace, tty_test_process.vspace, frame_cptr, frame, get_cur_proc()->as->as_page_table,
+                            stack_bottom, seL4_AllRights, seL4_ARM_Default_VMAttributes);
         if (err != 0) {
             cspace_delete(cspace, frame_cptr);
             cspace_free_slot(cspace, frame_cptr);
@@ -330,6 +366,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
     }
+    as_define_region(get_cur_proc()->as, stack_bottom, 5 * BIT(seL4_PageBits), 0b110);
 
     return stack_top;
 }
@@ -435,6 +472,9 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
         ZF_LOGE("Invalid elf file");
         return -1;
     }
+
+    /* define heap. */
+    as_define_region(get_cur_proc()->as, PROCESS_HEAP_BASE, PROCESS_STACK_BOTTOM-PROCESS_HEAP_BASE, 0b110);
 
     /* set up the stack */
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, &elf_file);

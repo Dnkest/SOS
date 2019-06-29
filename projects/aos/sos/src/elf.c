@@ -189,13 +189,14 @@ int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file)
         seL4_Word flags = elf_getProgramHeaderFlags(elf_file, i);
 
         /* Copy it across into the vspace. */
-        ZF_LOGD(" * Loading segment %p-->%p\n", (void *) vaddr, (void *)(vaddr + segment_size));
+        printf(" * Loading segment %p-->%p (%p)\n", (void *) vaddr, (void *)(vaddr + segment_size), vaddr);
         int err = load_segment_into_vspace(cspace, loadee_vspace, source_addr, segment_size, file_size, vaddr,
                                            get_sel4_rights_from_elf(flags));
         if (err) {
             ZF_LOGE("Elf loading failed!");
             return -1;
         }
+        as_define_region(get_cur_proc()->as, vaddr, segment_size, flags);
     }
 
     return 0;

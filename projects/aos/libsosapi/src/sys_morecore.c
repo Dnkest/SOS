@@ -30,7 +30,7 @@
 char morecore_area[MORECORE_AREA_BYTE_SIZE];
 
 /* Pointer to free space in the morecore area. */
-static uintptr_t morecore_base = (uintptr_t) 0x710000000000;
+static uintptr_t morecore_base = (uintptr_t) 0x700000000000;
 static uintptr_t morecore_top = (uintptr_t) 0x7FFFFFFFFFFF;
 
 /* Actual morecore implementation
