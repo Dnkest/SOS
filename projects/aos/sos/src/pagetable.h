@@ -42,3 +42,8 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
                         seL4_CPtr frame_cap, frame_ref_t frame_ref, 
                         as_page_table_t *as_page_table, seL4_Word vaddr, 
                         seL4_CapRights_t rights, seL4_ARM_VMAttributes attr);
+
+seL4_Error sys_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, 
+                        seL4_CapRights_t rights, seL4_ARM_VMAttributes attr);
+
+seL4_CPtr lookup_frame(as_page_table_t *as_page_table, seL4_Word vaddr);

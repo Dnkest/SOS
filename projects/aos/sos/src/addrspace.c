@@ -38,7 +38,7 @@ void as_define_region(addrspace_t *as, seL4_Word vaddr, size_t memsize, unsigned
     region->base = vaddr & MASK;
     region->top = ((vaddr + memsize) & MASK);
     if (memsize != (memsize & MASK)) {
-        region->top += + BIT(seL4_PageBits);
+        region->top += BIT(seL4_PageBits);
     }
     region->read =  permissions & PF_R || permissions & PF_X;
     region->write = permissions & PF_W;

@@ -92,6 +92,7 @@ seL4_Error map_frame_new(cspace_t *cspace, seL4_CPtr vspace,
             return err;
         }
         pt->frames[index] = frame_ref;
+        pt->frame_caps[index] = frame_cap;
         accessed_list_append(pt->list, index);
     }
     return seL4_NoError;
@@ -183,6 +184,58 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
         return map_pd(cspace, vspace, frame_cap, frame_ref, as_page_table->puds[index], vaddr, rights, attr);
     }
     return seL4_NoError;
+}
+
+seL4_Error sys_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, 
+                        seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
+{
+    seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject);
+    seL4_Error err = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, attr);
+    if (err) {
+        printf("err195: %d\n", err);
+        //return err;
+    }
+    cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject);
+    err = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, attr);
+    if (err) {
+        printf("err201: %d\n", err);
+        //return err;
+    }
+    cptr = alloc_type(cspace, seL4_ARM_PageTableObject);
+    err = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, attr);
+    if (err) {
+        printf("err207: %d\n", err);
+        //return err;
+    }
+    err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
+    if (err) {
+        printf("err212: %d\n", err);
+        //return err;
+    }
+    return seL4_NoError;
+}
+
+seL4_CPtr lookup_frame(as_page_table_t *as_page_table, seL4_Word vaddr)
+{
+    //printf("lookup_frame: 1\n");
+    int index = (vaddr >> 39) & 0b111111111;
+    page_upper_directory_t *p_pud = as_page_table->puds[index];
+    if (p_pud) {
+        //printf("lookup_frame: 2\n");
+        index = (vaddr >> 30) & 0b111111111;
+        page_directory_t *p_pd = p_pud->pds[index];
+        if (p_pd) {
+            //printf("lookup_frame: 3\n");
+            index = (vaddr >> 21) & 0b111111111;
+            page_table_t *p_pt = p_pd->pts[index];
+            if (p_pt) {
+                //printf("lookup_frame: 4\n");
+                index = (vaddr >> 12) & 0b111111111;
+                return p_pt->frame_caps[index];
+            }
+        }
+    }
+    return seL4_CapNull;
 }
 
 seL4_Error as_page_table_destroy(as_page_table_t *table)

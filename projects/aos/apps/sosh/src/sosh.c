@@ -64,7 +64,8 @@ size_t sos_write(void *vData, size_t count)
 
     seL4_SetMR(0, 2);
     seL4_SetMR(1, count);
-    memcpy(&seL4_GetIPCBuffer()->msg[2], vData, count);
+    seL4_SetMR(2, (seL4_Word)vData);
+    memcpy(&seL4_GetIPCBuffer()->msg[3], vData, count);
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0,
                                             0,
                                             0,
@@ -343,27 +344,27 @@ int main(void)
 {
     /* set up the c library. printf will not work before this is called */
     sosapi_init_syscall_table();
-    printf("\n[SOS Starting]\n");
+    printf("[SOS Starting!!]\n");
 
-    int t = 0;
-    printf("%p\n", &t);
-    // int y = 3;
-    // printf("%p\n", &y);
+    // int t = 0;
+    // printf("%p\n", &t);
+    // // int y = 3;
+    // // printf("%p\n", &y);
     
-    void *a = malloc(8);
-    printf("%p\n", a);
+    // void *a = malloc(8);
+    // printf("%p\n", a);
 
-    void *b = 0;
-    printf("%s\n", b);
-    // void *d = 0x710000000000;
-    // printf("%s\n", d);
-    // for (int i = 0; i < 10; i++) {
-    //     d += 0x1000000;
-    //     printf("%s\n", d);
-    // }
+    // void *b = 0;
+    // printf("%s\n", b);
+    // // void *d = 0x710000000000;
+    // // printf("%s\n", d);
+    // // for (int i = 0; i < 10; i++) {
+    // //     d += 0x1000000;
+    // //     printf("%s\n", d);
+    // // }
 
-    void *c = malloc(500);
-    printf("%p\n", c);
+    // void *c = malloc(500);
+    // printf("%p\n", c);
     thread_block();
 
     char buf[BUF_SIZ];

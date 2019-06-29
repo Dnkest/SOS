@@ -3,6 +3,7 @@
 #include "drivers/serial.h"
 #include "picoro.h"
 #include <aos/sel4_zf_logif.h>
+#include "vmem_layout.h"
 
 #define SYSCALL_MAX             5
 #define SOS_SYSCALL_OPEN        1
@@ -10,6 +11,8 @@
 #define SOS_SYSCALL_READ        3
 
 #define MAX_COROUTINES          20
+
+#define MASK 0xfffffffff000
 
 typedef struct job {
     coro c;
@@ -26,7 +29,67 @@ static syscall_handler_t handlers[SYSCALL_MAX];
 
 void *syscall_write_handler(void *cur_proc)
 {
-    serial_write((char *)&seL4_GetIPCBuffer()->msg[2], seL4_GetMR(1));
+    pcb_t *proc = (pcb_t *)cur_proc;
+    cspace_t *cspace = proc->global_cspace;
+    as_page_table_t *table = proc->as->as_page_table;
+    
+    seL4_Word vaddr = seL4_GetMR(2);
+    seL4_Word size = seL4_GetMR(1);
+
+    seL4_Word base_vaddr = vaddr & MASK;
+    seL4_Word top_vaddr = (vaddr + size) & MASK;
+    if (size != (size & MASK)) {
+        top_vaddr += BIT(seL4_PageBits);
+    }
+
+    int num_of_pages = (top_vaddr - base_vaddr)/BIT(seL4_PageBits);
+    if (num_of_pages > 100) {
+        /* too big, TODO */
+    }
+
+    /* supporting 100 pages amount of data for now. */
+    seL4_CPtr frame_caps[100];
+    unsigned int index = 0;
+
+    size_t count = seL4_GetMR(1);
+    seL4_Word local_vaddr = SOS_TMP_BUFFER;
+    for (int i = 0; i < num_of_pages; i++) {
+        /* allocate a slot to duplicate the frame cap so we can map it into our address space */
+        seL4_CPtr frame_cap = cspace_alloc_slot(cspace);
+        if (frame_cap == seL4_CapNull) {
+            ZF_LOGE("Failed to alloc slot for stack");
+            return 0;
+        }
+
+        /* copy the frame cap into the slot */
+        seL4_Error err = cspace_copy(cspace, frame_cap, cspace, lookup_frame(table, base_vaddr), seL4_AllRights);
+        if (err != seL4_NoError) {
+            cspace_free_slot(cspace, frame_cap);
+            ZF_LOGE("Failed to copy cap");
+            return 0;
+        }
+
+        /* map it into local vspace */
+        err = sys_map_frame(cspace, frame_cap, seL4_CapInitThreadVSpace, local_vaddr, seL4_AllRights,
+                    seL4_ARM_Default_VMAttributes);
+        if (err) {
+            printf("error = %d\n", err);
+        }
+
+        frame_caps[index++] = frame_cap;
+
+        base_vaddr += BIT(seL4_PageBits);
+        local_vaddr += BIT(seL4_PageBits);
+    }
+        
+    serial_write(SOS_TMP_BUFFER + (vaddr - (vaddr & MASK)), size);
+    memset(SOS_TMP_BUFFER, 0, seL4_GetMR(1));
+
+    for (unsigned int i = 0; i < index; i++) {
+        seL4_ARM_Page_Unmap(frame_caps[i]);
+        cspace_delete(cspace, frame_caps[i]);
+        cspace_free_slot(cspace, frame_caps[i]);
+    }
 
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
     seL4_Send(((pcb_t *)cur_proc)->reply, reply_msg);
