@@ -65,7 +65,7 @@ bool as_check_valid_region(addrspace_t *as, seL4_Word fault_address)
     }
     as_region_t *cur = as->regions;
     while (cur != NULL) {
-        printf("check region: %p-->%p, %d, %d\n",cur->base,cur->top,cur->read ,cur->write);
+        //printf("check region: %p-->%p, %d, %d\n",cur->base,cur->top,cur->read ,cur->write);
         if (fault_address >= cur->base && fault_address < cur->top) {
             return true;
         }
@@ -79,21 +79,20 @@ bool sos_handle_page_fault(seL4_Word fault_address)
     pcb_t *proc = get_cur_proc();
     printf("faultaddress-> %p\n", fault_address);
     if (as_check_valid_region(proc->as, fault_address)) {
-        printf("yes\n");
         cspace_t *cspace = proc->global_cspace;
         seL4_CPtr vspace = proc->vspace;
 
         frame_ref_t frame = alloc_frame();
         if (frame == NULL_FRAME) {
             ZF_LOGE("Couldn't allocate additional frame");
-            //return seL4_NotEnoughMemory;
+            return false;
         }
 
         seL4_CPtr frame_cptr = cspace_alloc_slot(cspace);
         if (frame_cptr == seL4_CapNull) {
             free_frame(frame);
             ZF_LOGE("Failed to alloc slot for frame");
-            //return seL4_NotEnoughMemory;
+            return false;
         }
 
         seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
@@ -101,7 +100,7 @@ bool sos_handle_page_fault(seL4_Word fault_address)
             cspace_free_slot(cspace, frame_cptr);
             free_frame(frame);
             ZF_LOGE("Failed to copy cap");
-            //return err;
+            return false;
         }
         err = sos_map_frame(cspace, vspace, frame_cptr, frame, proc->as->as_page_table,
                     fault_address & MASK, seL4_AllRights, seL4_ARM_Default_VMAttributes);
@@ -111,6 +110,7 @@ bool sos_handle_page_fault(seL4_Word fault_address)
             cspace_free_slot(cspace, frame_cptr);
             free_frame(frame);
             ZF_LOGE("Failed to copy cap");
+            return false;
         }
         seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         seL4_Reply(reply_msg);
