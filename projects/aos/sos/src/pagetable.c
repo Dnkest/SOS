@@ -53,12 +53,12 @@ page_table_t *pt_init()
 }
 
 /* Helper function to allocate 4kiB of specfied type. */
-seL4_CPtr alloc_type(cspace_t *cspace, seL4_Word type)
+seL4_CPtr alloc_type(cspace_t *cspace, seL4_Word type, ut_t *ut)
 {
-    ut_t *ut = ut_alloc_4k_untyped(NULL);
+    ut = ut_alloc_4k_untyped(NULL);
     if (ut == NULL) {
         ZF_LOGE("Out of 4k untyped");
-        return 0;
+        return seL4_CapNull;
     }
 
     /* allocate a slot to retype the memory for object into */
@@ -66,7 +66,7 @@ seL4_CPtr alloc_type(cspace_t *cspace, seL4_Word type)
     if (cptr == seL4_CapNull) {
         ut_free(ut);
         ZF_LOGE("Failed to allocate slot");
-        return 0;
+        return seL4_CapNull;
     }
 
     /* now do the retype */
@@ -107,9 +107,11 @@ seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace,
     if (!pd->pts[index]) {
         page_table_t *p_pt = pt_init();
 
-        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageTableObject);
+        ut_t *ut;
+        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageTableObject, ut);
         if (cptr == 0) {
             ZF_LOGE("Failed to alloc 4k of type seL4_ARM_PageTableObject");
+            return seL4_NotEnoughMemory;
         }
         
         seL4_Error err = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, attr);
@@ -117,6 +119,7 @@ seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace,
             return err;
         }
         p_pt->page_table_cptr = cptr;
+        p_pt->page_table_ut = ut;
         pd->pts[index] = p_pt;
         accessed_list_append(pd->list, index);
 
@@ -136,9 +139,11 @@ seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace,
     if (!pud->pds[index]) {
         page_directory_t *p_pd = pd_init();
 
-        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject);
+        ut_t *ut;
+        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject, ut);
         if (cptr == 0) {
             ZF_LOGE("Failed to alloc 4k of type seL4_ARM_PageDirectoryObject");
+            return seL4_NotEnoughMemory;
         }
         
         seL4_Error err = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, attr);
@@ -146,6 +151,7 @@ seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace,
             return err;
         }
         p_pd->page_directory_cptr = cptr;
+        p_pd->page_directory_ut = ut;
         pud->pds[index] = p_pd;
         accessed_list_append(pud->list, index);
 
@@ -166,9 +172,11 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
     if (!as_page_table->puds[index]) {
         page_upper_directory_t *p_pud = pud_init();
 
-        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject);
+        ut_t *ut;
+        seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject, ut);
         if (cptr == 0) {
             ZF_LOGE("Failed to alloc 4k of type seL4_ARM_PageUpperDirectoryObject");
+            return seL4_NotEnoughMemory;
         }
 
         seL4_Error err = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, attr);
@@ -176,6 +184,7 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
             return err;
         }
         p_pud->page_upper_directory_cptr = cptr;
+        p_pud->page_upper_directory_ut = ut;
         as_page_table->puds[index] = p_pud;
         accessed_list_append(as_page_table->list, index);
 
@@ -189,19 +198,20 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
 seL4_Error sys_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, 
                         seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
 {
-    seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject);
+    ut_t *ut;
+    seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject, ut);
     seL4_Error err = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, attr);
     if (err) {
         printf("err195: %d\n", err);
         //return err;
     }
-    cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject);
+    cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject, ut);
     err = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, attr);
     if (err) {
         printf("err201: %d\n", err);
         //return err;
     }
-    cptr = alloc_type(cspace, seL4_ARM_PageTableObject);
+    cptr = alloc_type(cspace, seL4_ARM_PageTableObject, ut);
     err = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, attr);
     if (err) {
         printf("err207: %d\n", err);
@@ -238,7 +248,7 @@ seL4_CPtr lookup_frame(as_page_table_t *as_page_table, seL4_Word vaddr)
     return seL4_CapNull;
 }
 
-seL4_Error as_page_table_destroy(as_page_table_t *table)
+seL4_Error as_page_table_destroy(cspace_t *cspace, as_page_table_t *table)
 {
     seL4_Error err;
     for (unsigned int i = table->list->index[0]; i < table->list->size; i++) {
@@ -253,6 +263,8 @@ seL4_Error as_page_table_destroy(as_page_table_t *table)
                         return err;
                     }
                     free_frame(p_pt->frames[i]);
+                    cspace_delete(cspace, p_pt->frame_caps[i]);
+                    cspace_free_slot(cspace, p_pt->frame_caps[i]);
                 }
                 as_free(p_pt->list);
                 as_free(p_pt->frames);
@@ -261,6 +273,9 @@ seL4_Error as_page_table_destroy(as_page_table_t *table)
                 if (err) {
                     return err;
                 }
+                cspace_delete(cspace, p_pt->page_table_cptr);
+                cspace_free_slot(cspace, p_pt->page_table_cptr);
+                ut_free(p_pt->page_table_ut);
                 as_free(p_pt);
             }
             as_free(p_pd->pts);
@@ -269,6 +284,9 @@ seL4_Error as_page_table_destroy(as_page_table_t *table)
             if (err) {
                 return err;
             }
+            cspace_delete(cspace, p_pd->page_directory_cptr);
+            cspace_free_slot(cspace, p_pd->page_directory_cptr);
+            ut_free(p_pd->page_directory_ut);
             as_free(p_pd);
         }
         as_free(p_pud->pds);
@@ -277,6 +295,9 @@ seL4_Error as_page_table_destroy(as_page_table_t *table)
         if (err) {
             return err;
         }
+        cspace_delete(cspace, p_pud->page_upper_directory_cptr);
+        cspace_free_slot(cspace, p_pud->page_upper_directory_cptr);
+        ut_free(p_pud->page_upper_directory_ut);
         as_free(p_pud);
     }
     as_free(table->puds);
