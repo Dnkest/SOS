@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sel4/sel4.h>
+#include "sos.h"
 
 
 /*
@@ -39,21 +40,13 @@ static uintptr_t morecore_top = (uintptr_t) 0x7FFFFFFFFFFF;
 
 long sys_brk(va_list ap)
 {
-
-    uintptr_t ret;
-    uintptr_t newbrk = va_arg(ap, uintptr_t);
     //printf("brk: %p   base: %p   top: %p\n", newbrk, morecore_base, morecore_top);
+    seL4_SetMR(0, SOS_SYSCALL_BRK);
+    seL4_SetMR(1, va_arg(ap, uintptr_t));
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    /*if the newbrk is 0, return the bottom of the heap*/
-    if (!newbrk) {
-        ret = morecore_base;
-    } else if (newbrk < morecore_top && newbrk > morecore_base) {
-        ret = morecore_base = newbrk;
-    } else {
-        ret = 0;
-    }
-
-    return ret;
+    return seL4_GetMR(0);
 }
 
 /* Large mallocs will result in muslc calling mmap, so we do a minimal implementation

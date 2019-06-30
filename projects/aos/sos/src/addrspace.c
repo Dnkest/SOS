@@ -25,7 +25,7 @@ addrspace_t *as_create()
 {
     addrspace_t *as = (addrspace_t *)as_alloc_one_page();
 
-    as->as_page_table = as_page_table_init();
+    as->as_page_table = page_table_create();
     as->regions = NULL;
     
     return as;

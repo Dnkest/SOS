@@ -3,7 +3,6 @@
 #include <sel4/sel4.h>
 
 #include "frame_table.h"
-#include "addrspace.h"
 
 typedef struct accessed_list {
     unsigned int index[BIT(9)];
@@ -38,15 +37,12 @@ typedef struct as_page_table {
     accessed_list_t *list;
 } as_page_table_t;
 
-as_page_table_t *as_page_table_init();
-seL4_Error as_page_table_destroy(cspace_t *cspace, as_page_table_t *table);
+as_page_table_t *page_table_create();
+seL4_Error page_table_destroy(cspace_t *cspace, as_page_table_t *table);
         
 seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
                         seL4_CPtr frame_cap, frame_ref_t frame_ref, 
                         as_page_table_t *as_page_table, seL4_Word vaddr, 
-                        seL4_CapRights_t rights, seL4_ARM_VMAttributes attr);
-
-seL4_Error sys_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, 
                         seL4_CapRights_t rights, seL4_ARM_VMAttributes attr);
 
 seL4_CPtr lookup_frame(as_page_table_t *as_page_table, seL4_Word vaddr);

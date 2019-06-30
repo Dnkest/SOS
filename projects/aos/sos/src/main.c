@@ -24,6 +24,7 @@
 #include <cpio/cpio.h>
 #include <elf/elf.h>
 #include <serial/serial.h>
+#include <adt/adt.h>
 
 #include "bootstrap.h"
 #include "irq.h"
@@ -82,6 +83,8 @@ static cspace_t cspace;
 /* the one process we start */
 static pcb_t tty_test_process;
 
+static as_page_table_t *global_pagetable;
+
 void handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args)
 {
 
@@ -126,6 +129,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
 {
 
     while (1) {
+        do_jobs();
         seL4_Word badge = 0;
         /* Block on ep, waiting for an IPC sent over ep, or
          * a notification from our bound notification object */
@@ -272,11 +276,11 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
 
     /* map it into the sos address space */
 
-    err = map_frame(cspace, local_stack_cptr, local_vspace, local_stack_bottom, seL4_AllRights,
-                    seL4_ARM_Default_VMAttributes);
-    // err = sos_map_frame(cspace, local_vspace, local_stack_cptr, frame,
-    //                     get_cur_proc()->as->as_page_table, stack_bottom,
-    //                 seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    // err = map_frame(cspace, local_stack_cptr, local_vspace, local_stack_bottom, seL4_AllRights,
+    //                 seL4_ARM_Default_VMAttributes);
+    err = sos_map_frame(cspace, local_vspace, local_stack_cptr, NULL,
+                        global_pagetable, local_stack_bottom,
+                    seL4_AllRights, seL4_ARM_Default_VMAttributes);
     if (err != seL4_NoError) {
         cspace_delete(cspace, local_stack_cptr);
         cspace_free_slot(cspace, local_stack_cptr);
@@ -368,7 +372,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
     }
-    as_define_region(tty_test_process.as, stack_bottom, 5 * BIT(seL4_PageBits), 0b110);
+    as_define_region(tty_test_process.as, PROCESS_STACK_BOTTOM, PROCESS_STACK_TOP-PROCESS_STACK_BOTTOM, 0b110);
 
     return stack_top;
 }
@@ -475,7 +479,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* define heap. */
-    as_define_region(tty_test_process.as, PROCESS_HEAP_BASE, PROCESS_STACK_BOTTOM-PROCESS_HEAP_BASE, 0b110);
+    as_define_region(tty_test_process.as, PROCESS_HEAP_BASE, PROCESS_HEAP_TOP-PROCESS_HEAP_BASE, 0b110);
 
     /* set up the stack */
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, &elf_file);
@@ -488,8 +492,10 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* Map in the IPC buffer for the thread */
-    err = map_frame(&cspace, tty_test_process.ipc_buffer, tty_test_process.vspace, PROCESS_IPC_BUFFER,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    // err = map_frame(&cspace, tty_test_process.ipc_buffer, tty_test_process.vspace, PROCESS_IPC_BUFFER,
+    //                 seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    err = sos_map_frame(&cspace, tty_test_process.vspace, tty_test_process.ipc_buffer, NULL,
+        tty_test_process.as->as_page_table,PROCESS_IPC_BUFFER, seL4_AllRights, seL4_ARM_Default_VMAttributes);
     if (err != 0) {
         ZF_LOGE("Unable to map IPC buffer for user app");
         return false;
@@ -583,7 +589,6 @@ NORETURN void *main_continued(UNUSED void *arg)
         IRQ_EP_BADGE,
         IRQ_IDENT_BADGE_BITS
     );
-    frame_table_init(&cspace, seL4_CapInitThreadVSpace);
 
     /* run sos initialisation tests */
     run_tests(&cspace);
@@ -601,8 +606,6 @@ NORETURN void *main_continued(UNUSED void *arg)
     printf("Serial driver init\n");
     serial_driver_init();
 
-    syscall_handlers_init();
-
     /* Initialises the timer */
     printf("Timer init\n");
     start_timer(timer_vaddr);
@@ -613,6 +616,8 @@ NORETURN void *main_continued(UNUSED void *arg)
     printf("Start first process\n");
     bool success = start_first_process(TTY_NAME, ipc_ep);
     ZF_LOGF_IF(!success, "Failed to start first process");
+
+    syscall_handler_init(&cspace, seL4_CapInitThreadVSpace, global_pagetable);
 
     printf("\nSOS entering syscall loop\n");
     syscall_loop(ipc_ep);
@@ -657,16 +662,53 @@ int main(void)
     /* test print */
     printf("SOS Started!\n");
 
+    frame_table_init(&cspace, seL4_CapInitThreadVSpace);
+    global_pagetable = page_table_create();
+
     /* allocate a bigger stack and switch to it -- we'll also have a guard page, which makes it much
      * easier to detect stack overruns */
     seL4_Word vaddr = SOS_STACK;
     for (int i = 0; i < SOS_STACK_PAGES; i++) {
-        seL4_CPtr frame_cap;
-        ut_t *frame = alloc_retype(&frame_cap, seL4_ARM_SmallPageObject, seL4_PageBits);
-        ZF_LOGF_IF(frame == NULL, "Failed to allocate stack page");
-        seL4_Error err = map_frame(&cspace, frame_cap, seL4_CapInitThreadVSpace,
-                                   vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
-        ZF_LOGF_IFERR(err, "Failed to map stack");
+        // seL4_CPtr frame_cap;
+        // ut_t *frame = alloc_retype(&frame_cap, seL4_ARM_SmallPageObject, seL4_PageBits);
+        // ZF_LOGF_IF(frame == NULL, "Failed to allocate stack page");
+        // seL4_Error err = map_frame(&cspace, frame_cap, seL4_CapInitThreadVSpace,
+        //                            vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        // ZF_LOGF_IFERR(err, "Failed to map stack");
+
+
+        frame_ref_t frame = alloc_frame();
+        if (frame == NULL_FRAME) {
+            ZF_LOGE("Couldn't allocate additional stack frame");
+            return 0;
+        }
+
+        /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
+        seL4_CPtr frame_cptr = cspace_alloc_slot(&cspace);
+        if (frame_cptr == seL4_CapNull) {
+            free_frame(frame);
+            ZF_LOGE("Failed to alloc slot for stack extra stack frame");
+            return 0;
+        }
+
+        /* copy the stack frame cap into the slot */
+        seL4_Error err = cspace_copy(&cspace, frame_cptr, &cspace, frame_page(frame), seL4_AllRights);
+        if (err != seL4_NoError) {
+            cspace_free_slot(&cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Failed to copy cap");
+            return 0;
+        }
+
+        err = sos_map_frame(&cspace, seL4_CapInitThreadVSpace, frame_cptr, frame, global_pagetable,
+                                        vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        if (err != 0) {
+            cspace_delete(&cspace, frame_cptr);
+            cspace_free_slot(&cspace, frame_cptr);
+            free_frame(frame);
+            ZF_LOGE("Unable to map extra stack frame for user app");
+            return 0;
+        }
         vaddr += PAGE_SIZE_4K;
     }
 

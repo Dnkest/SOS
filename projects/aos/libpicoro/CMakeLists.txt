@@ -11,8 +11,8 @@
 #
 cmake_minimum_required(VERSION 3.7.2)
 
-project(libadt C)
+project(libpicoro C)
 
-add_library(adt EXCLUDE_FROM_ALL src/adt.c src/queue.c src/priority_queue.c src/linkedlist.c)
-target_include_directories(adt PUBLIC include)
-target_link_libraries(adt Configuration muslc sel4 utils)
+add_library(picoro EXCLUDE_FROM_ALL src/picoro.c)
+target_include_directories(picoro PUBLIC include)
+target_link_libraries(picoro Configuration muslc sel4 utils)

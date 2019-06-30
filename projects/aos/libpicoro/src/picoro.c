@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <alloca.h>
-#include "picoro.h"
+#include <picoro/picoro.h>
 
 #pragma GCC push_options
 #pragma GCC optimize ("O0")

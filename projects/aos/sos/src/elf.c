@@ -22,8 +22,6 @@
 #include "ut.h"
 #include "mapping.h"
 #include "elfload.h"
-#include "proc.h"
-#include "pagetable.h"
 
 /*
  * Convert ELF permissions into seL4 permissions.

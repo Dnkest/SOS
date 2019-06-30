@@ -43,6 +43,8 @@ add_subdirectory(libsel4cspace)
 add_subdirectory(libserial)
 add_subdirectory(libsosapi)
 # add any additional libs here
+add_subdirectory(libadt)
+add_subdirectory(libpicoro)
 
 # set the variables for the AOS platform
 set(KernelArch arm CACHE STRING "" FORCE)

@@ -16,7 +16,7 @@ void accessed_list_append(accessed_list_t *list, int index)
     list->index[list->size++] = index;
 }
 
-as_page_table_t *as_page_table_init()
+as_page_table_t *page_table_create()
 {
     as_page_table_t *page_table = (as_page_table_t *)as_alloc_one_page();
     page_table->puds = (page_upper_directory_t **)as_alloc_one_page();
@@ -88,7 +88,9 @@ seL4_Error map_frame_new(cspace_t *cspace, seL4_CPtr vspace,
     int index = (vaddr >> 12) & 0b111111111;
     if (!pt->frames[index]) {
         seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-        if (err) {
+        if (err == seL4_DeleteFirst) {
+            printf("pagetable error: %p is already mapped (this should only happen once!)\n", vaddr);
+        } else if (err) {
             return err;
         }
         pt->frames[index] = frame_ref;
@@ -115,7 +117,9 @@ seL4_Error map_pt(cspace_t *cspace, seL4_CPtr vspace,
         }
         
         seL4_Error err = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, attr);
-        if (err) {
+        if (err == seL4_DeleteFirst) {
+            printf("pagetable error: %p is already mapped (this should only happen once!)\n", vaddr);
+        } else if (err) {
             return err;
         }
         p_pt->page_table_cptr = cptr;
@@ -147,7 +151,9 @@ seL4_Error map_pd(cspace_t *cspace, seL4_CPtr vspace,
         }
         
         seL4_Error err = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, attr);
-        if (err) {
+        if (err == seL4_DeleteFirst) {
+            printf("pagetable error: %p is already mapped (this should only happen once!)\n", vaddr);
+        } else if (err) {
             return err;
         }
         p_pd->page_directory_cptr = cptr;
@@ -168,19 +174,22 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
                         seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
 {
     int index = (vaddr >> 39) & 0b111111111;
-    //printf("vaddr = %p, index = %d\n", vaddr, index);
+    // printf("vaddr = %p, index = %d\n", vaddr, index);
     if (!as_page_table->puds[index]) {
         page_upper_directory_t *p_pud = pud_init();
 
         ut_t *ut;
         seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject, ut);
         if (cptr == 0) {
+            printf("pagetable: 2\n");
             ZF_LOGE("Failed to alloc 4k of type seL4_ARM_PageUpperDirectoryObject");
             return seL4_NotEnoughMemory;
         }
 
         seL4_Error err = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, attr);
-        if (err) {
+        if (err == seL4_DeleteFirst) {
+            printf("pagetable error: %p is already mapped (this should only happen once!)\n", vaddr);
+        } else if (err) {
             return err;
         }
         p_pud->page_upper_directory_cptr = cptr;
@@ -191,36 +200,6 @@ seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr vspace,
         return map_pd(cspace, vspace, frame_cap, frame_ref, p_pud, vaddr, rights, attr);
     } else {
         return map_pd(cspace, vspace, frame_cap, frame_ref, as_page_table->puds[index], vaddr, rights, attr);
-    }
-    return seL4_NoError;
-}
-
-seL4_Error sys_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, 
-                        seL4_CapRights_t rights, seL4_ARM_VMAttributes attr)
-{
-    ut_t *ut;
-    seL4_CPtr cptr = alloc_type(cspace, seL4_ARM_PageUpperDirectoryObject, ut);
-    seL4_Error err = seL4_ARM_PageUpperDirectory_Map(cptr, vspace, vaddr, attr);
-    if (err) {
-        printf("err195: %d\n", err);
-        //return err;
-    }
-    cptr = alloc_type(cspace, seL4_ARM_PageDirectoryObject, ut);
-    err = seL4_ARM_PageDirectory_Map(cptr, vspace, vaddr, attr);
-    if (err) {
-        printf("err201: %d\n", err);
-        //return err;
-    }
-    cptr = alloc_type(cspace, seL4_ARM_PageTableObject, ut);
-    err = seL4_ARM_PageTable_Map(cptr, vspace, vaddr, attr);
-    if (err) {
-        printf("err207: %d\n", err);
-        //return err;
-    }
-    err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-    if (err) {
-        printf("err212: %d\n", err);
-        //return err;
     }
     return seL4_NoError;
 }
@@ -248,7 +227,7 @@ seL4_CPtr lookup_frame(as_page_table_t *as_page_table, seL4_Word vaddr)
     return seL4_CapNull;
 }
 
-seL4_Error as_page_table_destroy(cspace_t *cspace, as_page_table_t *table)
+seL4_Error page_table_destroy(cspace_t *cspace, as_page_table_t *table)
 {
     seL4_Error err;
     for (unsigned int i = table->list->index[0]; i < table->list->size; i++) {

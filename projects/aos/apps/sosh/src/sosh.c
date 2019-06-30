@@ -21,6 +21,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <utils/time.h>
+#include <utils/page.h>
 #include <syscalls.h>
 /* Your OS header file */
 #include <sos.h>
@@ -61,18 +62,7 @@ static void thread_block(void)
 
 size_t sos_write(void *vData, size_t count)
 {
-
-    seL4_SetMR(0, 2);
-    seL4_SetMR(1, count);
-    seL4_SetMR(2, (seL4_Word)vData);
-    memcpy(&seL4_GetIPCBuffer()->msg[3], vData, count);
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0,
-                                            0,
-                                            0,
-                                            seL4_MsgMaxLength);
-    seL4_Call(SOS_IPC_EP_CAP, tag);
-
-    return count;
+    return sos_sys_write(3, vData, count);
 }
 
 size_t sos_read(void *vData, size_t count)
@@ -328,6 +318,45 @@ static int benchmark(int argc, char *argv[])
     }
 }
 
+
+#define NPAGES 255
+#define TEST_ADDRESS 0x8000000000
+
+/* called from pt_test */
+static void
+do_pt_test(char *buf)
+{
+    int i;
+
+    /* set */
+    for (int i = 0; i < NPAGES; i++) {
+      buf[i * PAGE_SIZE_4K] = i;
+    }
+
+    /* check */
+    for (int i = 0; i < NPAGES; i++) {
+      assert(buf[i * PAGE_SIZE_4K] == i);
+    }
+}
+
+static int m3_test(int argc, char *argv[])
+{
+    /* need a decent sized stack */
+    char buf1[NPAGES * PAGE_SIZE_4K], *buf2 = NULL;
+
+    /* check the stack is above phys mem */
+    assert((void *) buf1 > (void *) TEST_ADDRESS);
+
+    /* stack test */
+    do_pt_test(buf1);
+
+    /* heap test */
+    buf2 = malloc(20);
+    assert(buf2);
+    do_pt_test(buf2);
+    free(buf2);
+}
+
 struct command {
     char *name;
     int (*command)(int argc, char **argv);
@@ -337,35 +366,14 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
         "cp", cp
     }, { "ps", ps }, { "exec", exec }, {"sleep", second_sleep}, {"msleep", milli_sleep},
     {"time", second_time}, {"mtime", micro_time}, {"kill", kill},
-    {"benchmark", benchmark}
+    {"benchmark", benchmark}, {"m3", m3_test}
 };
+
 
 int main(void)
 {
     /* set up the c library. printf will not work before this is called */
     sosapi_init_syscall_table();
-    printf("[SOS Starting!!]\n");
-
-    // int t = 0;
-    // printf("%p\n", &t);
-    // // int y = 3;
-    // // printf("%p\n", &y);
-    
-    // void *a = malloc(8);
-    // printf("%p\n", a);
-
-    // void *b = 0;
-    // printf("%s\n", b);
-    // // void *d = 0x710000000000;
-    // // printf("%s\n", d);
-    // // for (int i = 0; i < 10; i++) {
-    // //     d += 0x1000000;
-    // //     printf("%s\n", d);
-    // // }
-
-    // void *c = malloc(500);
-    // printf("%p\n", c);
-    thread_block();
 
     char buf[BUF_SIZ];
     char *argv[MAX_ARGS];

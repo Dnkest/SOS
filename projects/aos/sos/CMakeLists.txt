@@ -64,9 +64,10 @@ add_executable(
     src/syscall.c
     archive.o
     src/sos.lds
-    src/picoro.c
     src/addrspace.c
     src/pagetable.c
+    src/io_mapping.c
+    src/vfs.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(
@@ -85,6 +86,8 @@ target_link_libraries(
     picotcp_bsd
     nfs
     ethernet
+    adt
+    picoro
 )
 
 set_property(

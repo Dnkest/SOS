@@ -19,8 +19,13 @@
 
 int sos_sys_open(const char *path, fmode_t mode)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_OPEN);
+    seL4_SetMR(1, mode);
+    memcpy(&seL4_GetIPCBuffer()->msg[2], path, 8);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_sys_close(int file)
@@ -31,14 +36,26 @@ int sos_sys_close(int file)
 
 int sos_sys_read(int file, char *buf, size_t nbyte)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_READ);
+    seL4_SetMR(1, nbyte);
+    seL4_SetMR(2, (seL4_Word)buf);
+    seL4_SetMR(3, file);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_sys_write(int file, const char *buf, size_t nbyte)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_WRITE);
+    seL4_SetMR(1, nbyte);
+    seL4_SetMR(2, (seL4_Word)buf);
+    seL4_SetMR(3, file);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_getdirent(int pos, char *name, size_t nbyte)
@@ -49,7 +66,7 @@ int sos_getdirent(int pos, char *name, size_t nbyte)
 
 int sos_stat(const char *path, sos_stat_t *buf)
 {
-    assert(!"You need to implement this");
+    //assert(!"You need to implement this");
     return -1;
 }
 
