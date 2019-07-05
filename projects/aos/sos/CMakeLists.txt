@@ -60,14 +60,15 @@ add_executable(
     src/sys/time.c
     src/drivers/uart.c
     src/drivers/serial.c
-    src/proc.c
     src/syscall.c
     archive.o
     src/sos.lds
     src/addrspace.c
     src/pagetable.c
-    src/io_mapping.c
     src/vfs.c
+    src/addrspace.c
+    src/pagetable.c
+    src/process.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

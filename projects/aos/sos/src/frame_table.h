@@ -154,4 +154,5 @@ seL4_ARM_Page frame_page(frame_ref_t frame_ref);
  */
 frame_t *frame_from_ref(frame_ref_t frame_ref);
 
-void free_frame_address(unsigned char *frame);
+void *alloc_one_page();
+void free_one_page(void *vaddr);

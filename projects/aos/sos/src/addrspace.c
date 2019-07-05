@@ -1,43 +1,43 @@
+#include <cspace/cspace.h>
+#include <utils/page.h>
+#include <sel4/sel4_arch/mapping.h>
+#include <stdbool.h>
+
 #include "addrspace.h"
-#include "proc.h"
+#include "frame_table.h"
+#include "mapping.h"
+#include "pagetable.h"
 #include "elf.h"
 
-#define MASK 0xFFFFFFFFF000
+#define CAPACITY (PAGE_SIZE_4K-sizeof(struct cap_list *)-sizeof(int))/sizeof(seL4_CPtr)
+#define PAGE_MASK 0xFFFFFFFFF000
 
-uintptr_t as_alloc_one_page()
+struct cap_list {
+    seL4_CPtr caps[CAPACITY];
+    int size;
+    struct cap_list *next;
+};
+
+cap_list_t *cap_list_create();
+void cap_list_insert(cap_list_t *list, seL4_CPtr cap);
+
+addrspace_t *addrspace_create()
 {
-    frame_ref_t frame = alloc_frame();
-    if (frame == NULL_FRAME) {
-        ZF_LOGE("Couldn't allocate additional frame");
-        return 0;
-    }
-    void *ret = (void *)frame_data(frame);
-    memset(ret, 0, BIT(seL4_PageBits));
-    return (uintptr_t)ret;
+    addrspace_t *addrspace = (addrspace_t *)alloc_one_page();
+    addrspace->cap_list = cap_list_create();
+    addrspace->table = pagetable_create();
+    addrspace->regions = NULL;
+    return addrspace;
 }
 
-void as_free(uintptr_t vaddr)
+void addrspace_define_region(addrspace_t *addrspace, seL4_Word vaddr,
+                        size_t memsize, unsigned long permissions)
 {
-    free_frame_address((unsigned char *)vaddr);
-}
+    region_t *region = (region_t *)alloc_one_page();
 
-addrspace_t *as_create()
-{
-    addrspace_t *as = (addrspace_t *)as_alloc_one_page();
-
-    as->as_page_table = page_table_create();
-    as->regions = NULL;
-    
-    return as;
-}
-
-void as_define_region(addrspace_t *as, seL4_Word vaddr, size_t memsize, unsigned long permissions)
-{
-    as_region_t *region = (as_region_t *)as_alloc_one_page();
-
-    region->base = vaddr & MASK;
-    region->top = ((vaddr + memsize) & MASK);
-    if (memsize != (memsize & MASK)) {
+    region->base = vaddr & PAGE_MASK;
+    region->top = ((vaddr + memsize) & PAGE_MASK);
+    if (memsize != (memsize & PAGE_MASK)) {
         region->top += BIT(seL4_PageBits);
     }
     region->read =  permissions & PF_R || permissions & PF_X;
@@ -45,10 +45,10 @@ void as_define_region(addrspace_t *as, seL4_Word vaddr, size_t memsize, unsigned
     region->next = NULL;
     printf("Defined region: %p-->%p, %d, %d\n",region->base,region->top,region->read ,region->write);
 
-    if (as->regions == NULL) {
-        as->regions = region;
+    if (addrspace->regions == NULL) {
+        addrspace->regions = region;
     } else {
-        as_region_t *cur = as->regions, *prev;
+        region_t *cur = addrspace->regions, *prev;
         while (cur != NULL) {
             prev = cur;
 
@@ -56,14 +56,15 @@ void as_define_region(addrspace_t *as, seL4_Word vaddr, size_t memsize, unsigned
         }
         prev->next = region;
     }
+
 }
 
-bool as_check_valid_region(addrspace_t *as, seL4_Word fault_address)
+bool addrspace_check_valid_region(addrspace_t *addrspace, seL4_Word fault_address)
 {
     if (fault_address == 0) {
         return false;
     }
-    as_region_t *cur = as->regions;
+    region_t *cur = addrspace->regions;
     while (cur != NULL) {
         //printf("check region: %p-->%p, %d, %d\n",cur->base,cur->top,cur->read ,cur->write);
         if (fault_address >= cur->base && fault_address < cur->top) {
@@ -72,51 +73,106 @@ bool as_check_valid_region(addrspace_t *as, seL4_Word fault_address)
         cur = cur->next;
     }
     return false;
+
 }
 
-bool sos_handle_page_fault(seL4_Word fault_address)
+frame_ref_t addrspace_lookup(addrspace_t *addrspace, seL4_Word vaddr)
 {
-    pcb_t *proc = get_cur_proc();
-    printf("faultaddress-> %p\n", fault_address);
-    if (as_check_valid_region(proc->as, fault_address)) {
-        cspace_t *cspace = proc->global_cspace;
-        seL4_CPtr vspace = proc->vspace;
+    return pagetable_lookup(addrspace->table, vaddr);
+}
 
-        frame_ref_t frame = alloc_frame();
-        if (frame == NULL_FRAME) {
-            ZF_LOGE("Couldn't allocate additional frame");
-            return false;
-        }
+seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, seL4_CPtr target, 
+                                seL4_CPtr vspace, seL4_Word vaddr, frame_ref_t frame,
+                                cspace_t *source_cspace, seL4_CPtr source)
+{
+    cap_list_t *list = addrspace->cap_list; 
 
-        seL4_CPtr frame_cptr = cspace_alloc_slot(cspace);
-        if (frame_cptr == seL4_CapNull) {
-            free_frame(frame);
-            ZF_LOGE("Failed to alloc slot for frame");
-            return false;
-        }
-
-        seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
-        if (err != seL4_NoError) {
-            cspace_free_slot(cspace, frame_cptr);
-            free_frame(frame);
-            ZF_LOGE("Failed to copy cap");
-            return false;
-        }
-        err = sos_map_frame(cspace, vspace, frame_cptr, frame, proc->as->as_page_table,
-                    fault_address & MASK, seL4_AllRights, seL4_ARM_Default_VMAttributes);
-        if (err) {
-            printf("error = %d\n", err);
-            cspace_delete(cspace, frame_cptr);
-            cspace_free_slot(cspace, frame_cptr);
-            free_frame(frame);
-            ZF_LOGE("Failed to copy cap");
-            return false;
-        }
-        seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-        seL4_Reply(reply_msg);
-        return true;
+    seL4_Error err = cspace_copy(target_cspace, target, source_cspace, source, seL4_AllRights);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Failed to copy cap");
+        return err;
     }
-    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-    seL4_Reply(reply_msg);
-    return false;
+
+    seL4_CPtr free_slots[MAPPING_SLOTS];
+    for (size_t i = 0; i < MAPPING_SLOTS; i++) {
+        free_slots[i] = cspace_alloc_slot(target_cspace);
+        if (free_slots[i]== seL4_CapNull) {
+            ZF_LOGE("Failed to alloc slot for frame");
+            return seL4_NotEnoughMemory;
+        }
+    }
+
+    seL4_Word used;
+    err = map_frame_cspace(target_cspace, target, vspace, vaddr, seL4_AllRights,
+                            seL4_ARM_Default_VMAttributes, free_slots, &used);
+    if (err) {
+        printf("err%d\n", err);
+        ZF_LOGE("Failed to copy cap");
+    } else {
+        pagetable_put(addrspace->table, vaddr, frame);
+    }
+    for (size_t i = 0; i < MAPPING_SLOTS; i++) {
+        if (used & BIT(i)) {
+            cap_list_insert(list, free_slots[i]);
+        } else {
+            cspace_delete(target_cspace, free_slots[i]);
+            cspace_free_slot(target_cspace, free_slots[i]);
+        }
+    }
+    cap_list_insert(list, target);
+    return err;
+}
+
+seL4_Error addrspace_map_one_page(addrspace_t *addrspace, cspace_t *target_cspace, seL4_CPtr target, 
+                        seL4_CPtr vspace, seL4_Word vaddr, cspace_t *source_cspace, seL4_CPtr source)
+{
+    seL4_Error err = addrspace_map_impl(addrspace, target_cspace, target, 
+                                vspace, vaddr, NULL,
+                                source_cspace, source);
+    if (err) {
+        cspace_delete(target_cspace, target);
+        cspace_free_slot(target_cspace, target);
+    }
+    return err;
+}
+
+seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr frame_cap,
+                                    seL4_CPtr vspace, seL4_Word vaddr)
+{
+    frame_ref_t frame = alloc_frame();
+    if (frame == NULL_FRAME) {
+        cspace_delete(cspace, frame_cap);
+        cspace_free_slot(cspace, frame_cap);
+        ZF_LOGE("Couldn't allocate additional frame");
+        return seL4_NotEnoughMemory;
+    }
+
+    seL4_Error err = addrspace_map_impl(addrspace, cspace, frame_cap, 
+                                vspace, vaddr, frame,
+                                frame_table_cspace(), frame_page(frame));
+    if (err) {
+        free_frame(frame);
+        cspace_delete(cspace, frame_cap);
+        cspace_free_slot(cspace, frame_cap);
+    }
+    return err;
+}
+
+cap_list_t *cap_list_create()
+{
+    cap_list_t *list = (cap_list_t *)alloc_one_page();
+    list->size = 0;
+    list->next = NULL;
+    return list;
+}
+
+void cap_list_insert(cap_list_t *list, seL4_CPtr cap)
+{
+    while (list->size == CAPACITY) {
+        list = list->next;
+    }
+    list->caps[list->size++] = cap;
+    if (list->size == CAPACITY) {
+        list->next = cap_list_create();
+    }
 }

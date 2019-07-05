@@ -397,3 +397,23 @@ void free_frame_address(unsigned char *frame)
     assert(frame_ref < frame_table.capacity);
     free_frame(frame_ref);
 }
+
+void *alloc_one_page()
+{
+    frame_ref_t frame = alloc_frame();
+    if (frame == NULL_FRAME) {
+        ZF_LOGE("Couldn't allocate additional frame");
+        return 0;
+    }
+    void *ret = (void *)frame_data(frame);
+    memset(ret, 0, PAGE_SIZE_4K);
+    return ret;
+}
+
+void free_one_page(void *vaddr)
+{
+    frame_ref_t frame_ref = (frame_ref_t)(vaddr - (void *)frame_table.frame_data)/PAGE_SIZE_4K;
+    assert(frame_ref != NULL_FRAME);
+    assert(frame_ref < frame_table.capacity);
+    free_frame(frame_ref);
+}

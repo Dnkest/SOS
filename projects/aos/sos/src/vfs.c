@@ -34,10 +34,12 @@ int vfs_open(const char *path, int flags)
 
 int vfs_write(int file, const char *buf, size_t nbyte)
 {
-    return fdt[file]->iov->write_f(buf, nbyte);
+   // return fdt[file]->iov->write_f(buf, nbyte);
+    return serial_write(buf, nbyte);
 }
 
 int vfs_read(int file, char *buf, size_t nbyte)
 {
-    return fdt[3]->iov->read_f(buf, nbyte);
+    return serial_read(buf, nbyte);
+    //return fdt[3]->iov->read_f(buf, nbyte);
 }
