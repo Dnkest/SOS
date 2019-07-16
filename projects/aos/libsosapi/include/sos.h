@@ -22,6 +22,9 @@
 #define SOS_SYSCALL_WRITE       2
 #define SOS_SYSCALL_READ        3
 #define SOS_SYSCALL_BRK         4
+#define SOS_SYSCALL_GETDIRENT   5
+#define SOS_SYSCALL_STAT        6
+#define SOS_SYSCALL_CLOSE       7
 
 /* Endpoint for talking to SOS */
 #define SOS_IPC_EP_CAP     (0x1)

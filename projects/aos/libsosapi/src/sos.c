@@ -14,14 +14,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sos.h>
+#include <stdio.h>
 
 #include <sel4/sel4.h>
 
 int sos_sys_open(const char *path, fmode_t mode)
 {
     seL4_SetMR(0, SOS_SYSCALL_OPEN);
-    seL4_SetMR(1, mode);
-    memcpy(&seL4_GetIPCBuffer()->msg[2], path, 8);
+    seL4_SetMR(1, path);
+    seL4_SetMR(2, mode);
+    seL4_SetMR(3, strlen(path));
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
     seL4_Call(SOS_IPC_EP_CAP, tag);
 
@@ -30,8 +32,12 @@ int sos_sys_open(const char *path, fmode_t mode)
 
 int sos_sys_close(int file)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_CLOSE);
+    seL4_SetMR(1, file);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_sys_read(int file, char *buf, size_t nbyte)
@@ -60,14 +66,25 @@ int sos_sys_write(int file, const char *buf, size_t nbyte)
 
 int sos_getdirent(int pos, char *name, size_t nbyte)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_GETDIRENT);
+    seL4_SetMR(1, pos);
+    seL4_SetMR(2, name);
+    seL4_SetMR(3, nbyte);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_stat(const char *path, sos_stat_t *buf)
 {
-    //assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_STAT);
+    seL4_SetMR(1, path);
+    seL4_SetMR(2, buf);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 pid_t sos_process_create(const char *path)

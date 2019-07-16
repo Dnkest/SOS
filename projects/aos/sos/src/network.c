@@ -46,6 +46,7 @@
 #include "mapping.h"
 #include "irq.h"
 #include "ut.h"
+#include "fs/sos_nfs.h"
 
 
 #ifndef SOS_NFS_DIR
@@ -247,6 +248,7 @@ void network_init(cspace_t *cspace, void *timer_vaddr)
     nfs_set_debug(nfs, 10);
     int ret = nfs_mount_async(nfs, CONFIG_SOS_GATEWAY, SOS_NFS_DIR, nfs_mount_cb, NULL);
     ZF_LOGF_IF(ret != 0, "NFS Mount failed: %s", nfs_get_error(nfs));
+    sos_nfs_set_context(nfs);
 }
 
 void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data,

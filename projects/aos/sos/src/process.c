@@ -4,21 +4,19 @@
 #include <elf/elf.h>
 #include <aos/sel4_zf_logif.h>
 #include <aos/debug.h>
-#include <adt/id.h>
 
 #include "process.h"
 #include "frame_table.h"
 #include "vmem_layout.h"
-
-#define CAPACITY 4096 - sizeof(unsigned int)
+#include "utils/kmalloc.h"
+#include "fs/fd_table.h"
 
 #define TTY_PRIORITY         (0)
 #define TTY_EP_BADGE         (101)
 
-static process_t *cur_proc;
+static process_t *g_cur_proc;
 
-static id_table_t *ids;
-static seL4_Word base = SOS_MAP;
+static id_table_t *id_table;
 
 seL4_Word process_init_stack(process_t *proc, cspace_t *cspace, addrspace_t *global_addrspace,
                                     seL4_CPtr global_vspace, elf_t *elf_file);
@@ -55,9 +53,9 @@ static ut_t *process_alloc_retype(process_t *proc, seL4_CPtr *cptr, seL4_Word ty
 
 process_t *process_create(cspace_t *cspace, char *cpio_archive, char *cpio_archive_end)
 {
-    ids = id_table_init(0);
-    id_tests(ids);
+    id_table = id_table_init(SOS_MAP, PAGE_SIZE_4K, 100);
     process_t *proc = (process_t *)alloc_one_page();
+    proc->fdt = fdt_init();
     proc->global_cspace = cspace;
     proc->addrspace = addrspace_create();
     proc->cpio_archive = cpio_archive;
@@ -319,8 +317,20 @@ seL4_Word process_init_stack(process_t *proc, cspace_t *cspace, addrspace_t *glo
     return stack_top;
 }
 
-seL4_Word process_write(process_t *proc, addrspace_t *global_addrspace, seL4_CPtr vspace,
-                                seL4_Word user_vaddr, seL4_Word size)
+void set_cur_proc(process_t *proc)
+{
+    g_cur_proc = proc;
+}
+
+process_t *cur_proc()
+{
+    return g_cur_proc;
+}
+
+
+seL4_Word process_map(process_t *proc, seL4_Word user_vaddr, seL4_Word size,
+                        addrspace_t *global_addrspace, seL4_CPtr global_vspace,
+                        proc_map_t *mapped)
 {
     seL4_Word user_base_vaddr = user_vaddr & 0xFFFFFFFFF000;
     unsigned int num_pages = (user_vaddr - user_base_vaddr + size) / PAGE_SIZE_4K;
@@ -328,22 +338,13 @@ seL4_Word process_write(process_t *proc, addrspace_t *global_addrspace, seL4_CPt
         num_pages++;
     }
 
-    seL4_CPtr frame_caps[num_pages];
-    unsigned int index = 0;
+    mapped->num_pages = num_pages;
+    mapped->frame_caps = (seL4_CPtr *)kmalloc(num_pages *sizeof(seL4_CPtr));
+    seL4_Word kernel_base_vaddr = id_alloc(id_table, num_pages);
+    mapped->vaddr = kernel_base_vaddr;
 
-    unsigned int addr_ids[num_pages];
-    unsigned int start = id_find_n(ids, num_pages);
-    for (int i = 0; i < num_pages; i++) {
-        addr_ids[i] = id_next_start_at(ids, start++);
-    }
-
-    seL4_Word kernel_base_vaddr = base + addr_ids[0] * PAGE_SIZE_4K;
-
-    seL4_Word kernel_vaddr_tmp, user_vaddr_tmp = user_base_vaddr;
-
-    for (int i = 0; i < num_pages; i++) {
-        kernel_vaddr_tmp = base + addr_ids[i] * PAGE_SIZE_4K;
-
+    seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
+    for (unsigned int i = 0; i < num_pages; i++) {
         seL4_CPtr user_frame_cap = frame_page(addrspace_lookup(proc->addrspace, user_vaddr_tmp));
 
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(proc->global_cspace);
@@ -352,83 +353,26 @@ seL4_Word process_write(process_t *proc, addrspace_t *global_addrspace, seL4_CPt
             return 0;
         }
         seL4_Error err = addrspace_map_one_page(global_addrspace, proc->global_cspace,
-                        kernel_frame_cap, vspace, kernel_vaddr_tmp, frame_table_cspace(), user_frame_cap);
+                        kernel_frame_cap, global_vspace, kernel_vaddr_tmp, frame_table_cspace(), user_frame_cap);
         if (err) {
-            printf("err %d\n", err);
-        }
-        frame_caps[index++] = kernel_frame_cap;
-        user_vaddr_tmp += PAGE_SIZE_4K;
-    }
-
-    int actual = vfs_write(seL4_GetMR(3), kernel_base_vaddr + (user_vaddr - user_base_vaddr), size);
-    memset(kernel_base_vaddr, 0, size);
-    for (unsigned int i = 0; i < num_pages; i++) {
-        seL4_ARM_Page_Unmap(frame_caps[i]);
-        cspace_delete(proc->global_cspace, frame_caps[i]);
-        cspace_free_slot(proc->global_cspace, frame_caps[i]);
-        id_free(ids, addr_ids[i]);
-    }
-    return actual;
-}
-
-seL4_Word process_read(process_t *proc, addrspace_t *global_addrspace, seL4_CPtr vspace,
-                                seL4_Word user_vaddr, seL4_Word size)
-{
-    seL4_Word user_base_vaddr = user_vaddr & 0xFFFFFFFFF000;
-    unsigned int num_pages = (user_vaddr - user_base_vaddr + size) / PAGE_SIZE_4K;
-    if ((user_vaddr - user_base_vaddr + size) % PAGE_SIZE_4K) {
-        num_pages++;
-    }
-
-    seL4_CPtr frame_caps[num_pages];
-    unsigned int index = 0;
-
-    unsigned int addr_ids[num_pages];
-    unsigned int start = id_find_n(ids, num_pages);
-    for (int i = 0; i < num_pages; i++) {
-        addr_ids[i] = id_next_start_at(ids, start++);
-    }
-
-    seL4_Word kernel_base_vaddr = base + addr_ids[0] * PAGE_SIZE_4K;
-
-    seL4_Word kernel_vaddr_tmp, user_vaddr_tmp = user_base_vaddr;
-
-    for (int i = 0; i < num_pages; i++) {
-        kernel_vaddr_tmp = base + addr_ids[i] * PAGE_SIZE_4K;
-
-        seL4_CPtr user_frame_cap = frame_page(addrspace_lookup(proc->addrspace, user_vaddr_tmp));
-
-        seL4_CPtr kernel_frame_cap = cspace_alloc_slot(proc->global_cspace);
-        if (kernel_frame_cap == seL4_CapNull) {
-            ZF_LOGE("Failed to alloc slot for stack");
+            ZF_LOGE("mapping user address failed");
             return 0;
         }
-        seL4_Error err = addrspace_map_one_page(global_addrspace, proc->global_cspace,
-                        kernel_frame_cap, vspace, kernel_vaddr_tmp, frame_table_cspace(), user_frame_cap);
-        if (err) {
-            printf("err %d\n", err);
-        }
-        frame_caps[index++] = kernel_frame_cap;
+        mapped->frame_caps[i] = kernel_frame_cap;
         user_vaddr_tmp += PAGE_SIZE_4K;
+        kernel_vaddr_tmp += PAGE_SIZE_4K;
     }
-
-    int actual = vfs_read(seL4_GetMR(3), kernel_base_vaddr + (user_vaddr - user_base_vaddr), size);
-
-    for (unsigned int i = 0; i < num_pages; i++) {
-        seL4_ARM_Page_Unmap(frame_caps[i]);
-        cspace_delete(proc->global_cspace, frame_caps[i]);
-        cspace_free_slot(proc->global_cspace, frame_caps[i]);
-        id_free(ids, addr_ids[i]);
-    }
-    return actual;
+    seL4_Word ret = kernel_base_vaddr + user_vaddr - user_base_vaddr;
+    return ret;
 }
 
-void proc_set(process_t *proc)
+void process_unmap(process_t *proc, proc_map_t *mapped)
 {
-    cur_proc = proc;
-}
-
-process_t *proc_get()
-{
-    return cur_proc;
+    for (unsigned int i = 0; i < mapped->num_pages; i++) {
+        seL4_ARM_Page_Unmap(mapped->frame_caps[i]);
+        cspace_delete(proc->global_cspace, mapped->frame_caps[i]);
+        cspace_free_slot(proc->global_cspace, mapped->frame_caps[i]);
+    }
+    kfree(mapped->frame_caps);
+    id_free(id_table, mapped->vaddr, mapped->num_pages);
 }

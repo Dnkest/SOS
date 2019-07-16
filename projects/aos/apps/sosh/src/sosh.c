@@ -65,11 +65,11 @@ size_t sos_write(void *vData, size_t count)
     return sos_sys_write(3, vData, count);
 }
 
-size_t sos_read(void *vData, size_t count)
-{
-    // use the content of tty test
-    return 0;
-}
+// size_t sos_read(void *vData, size_t count)
+// {
+//     // use the content of tty test
+//     return 0;
+// }
 
 static void prstat(const char *name)
 {
@@ -357,6 +357,12 @@ static int m3_test(int argc, char *argv[])
     free(buf2);
 }
 
+static int m4_test(int argc, char *argv[])
+{
+
+    return 0;
+}
+
 struct command {
     char *name;
     int (*command)(int argc, char **argv);
@@ -366,7 +372,7 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
         "cp", cp
     }, { "ps", ps }, { "exec", exec }, {"sleep", second_sleep}, {"msleep", milli_sleep},
     {"time", second_time}, {"mtime", micro_time}, {"kill", kill},
-    {"benchmark", benchmark}, {"m3", m3_test}
+    {"benchmark", benchmark}, {"m3", m3_test}, {"m4", m4_test}
 };
 
 

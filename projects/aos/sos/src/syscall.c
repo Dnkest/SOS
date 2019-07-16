@@ -1,19 +1,13 @@
-// #include <adt/linkedlist.h>
-#include <adt/queue.h>
 #include <picoro/picoro.h>
+#include <sys/types.h>
+#include <aos/sel4_zf_logif.h>
+#include <stdio.h>
 
 #include "syscall.h"
-#include "drivers/serial.h"
-#include <aos/sel4_zf_logif.h>
 #include "vmem_layout.h"
-// #include "io_mapping.h"
-#include "vfs.h"
-
-#define SYSCALL_MAX             5
-#define SOS_SYSCALL_OPEN        1
-#define SOS_SYSCALL_WRITE       2
-#define SOS_SYSCALL_READ        3
-#define SOS_SYSCALL_BRK         4
+#include "fs/vfs.h"
+#include "utils/kmalloc.h"
+#include "utils/jobq.h"
 
 #define MASK 0xfffffffff000
 
@@ -24,45 +18,78 @@ static cspace_t *global_cspace;
 static seL4_CPtr global_vspace;
 static addrspace_t *global_addrspace;
 
-typedef struct job {
-    coro c;
-    void *state;
-} job_t;
-
-static Q job_queue;
-
 typedef void *(*syscall_handler_t)(void *);
 static syscall_handler_t handlers[SYSCALL_MAX];
 
 void *syscall_open_handler(void *cur_proc)
 {
     process_t *proc = (process_t *)cur_proc;
-    seL4_SetMR(0, vfs_open(&seL4_GetIPCBuffer()->msg[2], seL4_GetMR(1)));
+    seL4_Word path = seL4_GetMR(1);
+    seL4_Word mode = seL4_GetMR(2);
+    seL4_Word len = seL4_GetMR(4);
+
+    proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+    const char *path_vaddr = (const char *)process_map(proc, path, len,
+                    global_addrspace, global_vspace,
+                    mapped);
+
+    seL4_SetMR(0, vfs_open(proc->fdt, path_vaddr, (fmode_t)mode));
     
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-    seL4_Send(((process_t *)cur_proc)->reply, reply_msg);
-
-    return NULL;
+    seL4_Send(proc->reply, reply_msg);
 }
 
 void *syscall_write_handler(void *cur_proc)
 {
+    process_t *proc = (process_t *)cur_proc;
     seL4_Word size = seL4_GetMR(1);
-    int nbyte = process_write((process_t *)cur_proc, global_addrspace, global_vspace,
-                                seL4_GetMR(2), size);
-    seL4_SetMR(0, nbyte);
+    if (size >= (1 << 18)) {
+        size = 0b101111111111111111;
+    }
+    seL4_Word user_vaddr = seL4_GetMR(2);
+
+    if (size != 0) {
+        proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+        seL4_Word vaddr = process_map(proc, user_vaddr, size,
+                            global_addrspace, global_vspace,
+                            mapped);
+        int actual = vfs_write(proc->fdt, seL4_GetMR(3), vaddr, size);
+        process_unmap(proc, mapped);
+        kfree(mapped);
+        seL4_SetMR(0, actual);
+    } else {
+        seL4_SetMR(0, 0);
+    }
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-    seL4_Send(((process_t *)cur_proc)->reply, reply_msg);
+    seL4_Send(proc->reply, reply_msg);
 }
 
 void *syscall_read_handler(void *cur_proc)
 {
+    process_t *proc = (process_t *)cur_proc;
     seL4_Word size = seL4_GetMR(1);
-    int nbyte = process_read((process_t *)cur_proc, global_addrspace, global_vspace,
-                                seL4_GetMR(2), size);
-    seL4_SetMR(0, nbyte);
+//printf("size %lu\n", size);
+    if (size >= (1 << 17)) {
+        
+        size = 0b101111111111111111;
+    }
+    seL4_Word user_vaddr = seL4_GetMR(2);
+
+    if (size != 0) {
+        proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+        seL4_Word vaddr = process_map(proc, user_vaddr, size,
+                            global_addrspace, global_vspace,
+                            mapped);
+        int actual = vfs_read(proc->fdt, seL4_GetMR(3), vaddr, size);
+        //printf("read actul %d\n", actual);
+        process_unmap(proc, mapped);
+        kfree(mapped);
+        seL4_SetMR(0, actual);
+    } else {
+        seL4_SetMR(0, 0);
+    }
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-    seL4_Send(((process_t *)cur_proc)->reply, reply_msg);
+    seL4_Send(proc->reply, reply_msg);
 }
 
 void *syscall_brk_handler(void *cur_proc)
@@ -84,17 +111,72 @@ void *syscall_brk_handler(void *cur_proc)
     seL4_Send(((process_t *)cur_proc)->reply, reply_msg);
 }
 
+void *syscall_getdirent_handler(void *cur_proc)
+{
+    process_t *proc = (process_t *)cur_proc;
+    seL4_Word pos = seL4_GetMR(1);
+    seL4_Word name = seL4_GetMR(2);
+    seL4_Word nbyte = seL4_GetMR(3);
+    proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+    char *name_vaddr = (char *)process_map(proc, name, nbyte,
+                    global_addrspace, global_vspace,
+                    mapped);
+    seL4_SetMR(0, vfs_getdirent((int)pos, name_vaddr, (size_t )nbyte));
+    process_unmap(proc, mapped);
+    kfree(mapped);
+    
+    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_Send(proc->reply, reply_msg);
+}
+
+void *syscall_stat_handler(void *cur_proc)
+{
+    process_t *proc = (process_t *)cur_proc;
+    seL4_Word path = seL4_GetMR(1);
+    seL4_Word buf = seL4_GetMR(2);
+
+    proc_map_t *mapped_path = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+    const char *path_vaddr = (const char *)process_map(proc, path, 6144,
+                    global_addrspace, global_vspace,
+                    mapped_path);
+    proc_map_t *mapped_buf = (proc_map_t *)kmalloc(sizeof(proc_map_t));
+    sos_stat_t *buf_vaddr = (const char *)process_map(proc, buf, sizeof(sos_stat_t),
+                    global_addrspace, global_vspace,
+                    mapped_buf);
+    seL4_SetMR(0, vfs_stat(path_vaddr, buf_vaddr));
+    process_unmap(proc, mapped_path);
+    kfree(mapped_path);
+    process_unmap(proc, mapped_buf);
+    kfree(mapped_buf);
+    
+    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_Send(proc->reply, reply_msg);
+}
+
+void *syscall_close_handler(void *cur_proc)
+{
+    process_t *proc = (process_t *)cur_proc;
+    seL4_Word file = seL4_GetMR(1);
+
+    seL4_SetMR(0, vfs_close(proc->fdt, (int)file));
+    
+    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_Send(proc->reply, reply_msg);
+}
 
 void syscall_handler_init(cspace_t *cspace, seL4_CPtr vspace, addrspace_t *addrspace)
 {
     global_cspace = cspace;
     global_vspace = vspace;
     global_addrspace = addrspace;
-    job_queue = q_create(5);
+    jobq_init();
     handlers[SOS_SYSCALL_OPEN] = syscall_open_handler;
     handlers[SOS_SYSCALL_WRITE] = syscall_write_handler;
     handlers[SOS_SYSCALL_READ] = syscall_read_handler;
     handlers[SOS_SYSCALL_BRK] = syscall_brk_handler;
+    handlers[SOS_SYSCALL_GETDIRENT] = syscall_getdirent_handler;
+    handlers[SOS_SYSCALL_STAT] = syscall_stat_handler;
+    handlers[SOS_SYSCALL_CLOSE] = syscall_close_handler;
 }
 
 void dispatch_syscall(process_t *proc, int syscall_number)
@@ -106,15 +188,13 @@ void dispatch_syscall(process_t *proc, int syscall_number)
     proc->reply = reply;
 
     coro c = coroutine(handlers[syscall_number], BIT(14));
-
-    void *state = resume(c, (void *)proc);
+    proc = resume(c, (void *)proc);
 
     if (resumable(c)) {
-        //printf("resumed\n");
-        job_t *new_job = malloc(sizeof(job_t));
+        job_t *new_job = kmalloc(sizeof(job_t));
         new_job->c = c;
-        new_job->state = state;
-        q_push(job_queue, new_job);
+        new_job->proc = proc;
+        jobq_push(new_job);
     }
 
 }
@@ -144,7 +224,6 @@ bool sos_handle_page_fault(process_t *proc, seL4_Word fault_address)
         seL4_Error err = addrspace_alloc_map_one_page(proc->addrspace, global_cspace, frame_cap,
                                    proc->vspace, fault_address & MASK);
         if (err) {
-            printf("error = %d\n", err);
             ZF_LOGE("Failed to copy cap");
             return false;
         }
@@ -159,15 +238,18 @@ bool sos_handle_page_fault(process_t *proc, seL4_Word fault_address)
 
 
 void do_jobs()
-{   
-    if (q_empty(job_queue)) return;
+{
+    if (jobq_empty()) return;
 
-    job_t *job = q_front(job_queue);
-    q_pop(job_queue);
+    job_t *job = jobq_front();
+    jobq_pop();
 
-    void *state = resume(job->c, (void *)job->state);
+    void *proc = resume(job->c, job->proc);
 
     if (resumable(job->c)) {
-        q_push(job_queue, job);
+        job->proc = proc;
+        jobq_push(job);
+    } else {
+        kfree(job);
     }
 }

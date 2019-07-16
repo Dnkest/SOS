@@ -23,14 +23,12 @@
 #include <clock/clock.h>
 #include <cpio/cpio.h>
 #include <elf/elf.h>
-#include <serial/serial.h>
 
 #include "bootstrap.h"
 #include "irq.h"
 #include "network.h"
 #include "frame_table.h"
 #include "drivers/uart.h"
-#include "drivers/serial.h"
 #include "ut.h"
 #include "vmem_layout.h"
 #include "mapping.h"
@@ -40,6 +38,8 @@
 #include "syscall.h"
 #include "addrspace.h"
 #include "process.h"
+#include "utils/kmalloc.h"
+#include "utils/idalloc.h"
 
 #include <aos/vsyscall.h>
 
@@ -126,9 +126,9 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             /* It's not a fault or an interrupt, it must be an IPC
              * message from tty_test! */
             //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
-            sos_handle_syscall(proc_get());
+            sos_handle_syscall(cur_proc());
         } else if (label == seL4_Fault_VMFault) {
-            if (!sos_handle_page_fault(proc_get(), seL4_GetMR(seL4_VMFault_Addr))) {
+            if (!sos_handle_page_fault(cur_proc(), seL4_GetMR(seL4_VMFault_Addr))) {
                 /* some kind of fault */
                 debug_print_fault(message, TTY_NAME);
                 /* dump registers too */
@@ -140,7 +140,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             /* some kind of fault */
             debug_print_fault(message, TTY_NAME);
             /* dump registers too */
-            debug_dump_registers(proc_get()->tcb);
+            debug_dump_registers(cur_proc()->tcb);
 
             ZF_LOGF("The SOS skeleton does not know how to handle faults!");
         }
@@ -235,10 +235,6 @@ NORETURN void *main_continued(UNUSED void *arg)
     printf("Network init\n");
     network_init(&cspace, timer_vaddr);
 
-    /* Initialise the serial driver. */
-    printf("Serial driver init\n");
-    serial_driver_init();
-
     /* Initialises the timer */
     printf("Timer init\n");
     start_timer(timer_vaddr);
@@ -249,10 +245,13 @@ NORETURN void *main_continued(UNUSED void *arg)
     printf("Start first process\n");
     process_t *proc = process_create(&cspace, _cpio_archive, _cpio_archive_end);
     process_start(proc, TTY_NAME, global_addrspace, ipc_ep);
-    proc_set(proc);
+    set_cur_proc(proc);
     ZF_LOGF_IF(!proc, "Failed to start first process");
 
     syscall_handler_init(&cspace, seL4_CapInitThreadVSpace, global_addrspace);
+
+    //kmalloc_tests();
+    //id_alloc_tests();
 
     printf("\nSOS entering syscall loop\n");
     syscall_loop(ipc_ep);

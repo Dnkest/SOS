@@ -59,16 +59,22 @@ add_executable(
     src/sys/thread.c
     src/sys/time.c
     src/drivers/uart.c
-    src/drivers/serial.c
     src/syscall.c
     archive.o
     src/sos.lds
     src/addrspace.c
     src/pagetable.c
-    src/vfs.c
     src/addrspace.c
     src/pagetable.c
     src/process.c
+    src/fs/fd_table.c
+    src/fs/sos_nfs.c
+    src/fs/vfs.c
+    src/fs/vnode.c
+    src/fs/serial.c
+    src/utils/kmalloc.c
+    src/utils/idalloc.c
+    src/utils/jobq.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(
