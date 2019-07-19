@@ -143,6 +143,8 @@ static int cp(int argc, char **argv)
         printf("error on cp\n");
         return 1;
     }
+    sos_sys_close(fd);
+    sos_sys_close(fd_out);
 
     return 0;
 }

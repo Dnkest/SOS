@@ -35,7 +35,7 @@ typedef struct process {
 typedef struct proc_map {
     unsigned int num_pages;
     seL4_CPtr *frame_caps;
-    seL4_Word vaddr;
+    seL4_Word *vaddrs;
 } proc_map_t;
 
 void set_cur_proc(process_t *proc);
@@ -47,4 +47,4 @@ void process_start(process_t *proc, char *app_name, addrspace_t *global_addrspac
 seL4_Word process_map(process_t *proc, seL4_Word user_vaddr, seL4_Word size,
                         addrspace_t *global_addrspace, seL4_CPtr global_vspace,
                         proc_map_t *mapped);
-void process_unmap(process_t *proc, proc_map_t *mapped);
+void process_unmap(process_t *proc, addrspace_t *global_addrspace, proc_map_t *mapped);

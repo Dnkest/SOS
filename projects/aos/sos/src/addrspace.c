@@ -8,14 +8,21 @@
 #include "mapping.h"
 #include "pagetable.h"
 #include "elf.h"
+#include "utils/kmalloc.h"
 
 #define CAPACITY (PAGE_SIZE_4K-sizeof(struct cap_list *)-sizeof(int))/sizeof(seL4_CPtr)
 #define PAGE_MASK 0xFFFFFFFFF000
+
+struct cap_list_node {
+    seL4_CPtr cap;
+    struct cap_list_node *next;
+};
 
 struct cap_list {
     seL4_CPtr caps[CAPACITY];
     int size;
     struct cap_list *next;
+    //struct cap_list_node *head;
 };
 
 cap_list_t *cap_list_create();
@@ -23,7 +30,7 @@ void cap_list_insert(cap_list_t *list, seL4_CPtr cap);
 
 addrspace_t *addrspace_create()
 {
-    addrspace_t *addrspace = (addrspace_t *)alloc_one_page();
+    addrspace_t *addrspace = (addrspace_t *)kmalloc(sizeof(addrspace_t));
     addrspace->cap_list = cap_list_create();
     addrspace->table = pagetable_create();
     addrspace->regions = NULL;
@@ -33,7 +40,7 @@ addrspace_t *addrspace_create()
 void addrspace_define_region(addrspace_t *addrspace, seL4_Word vaddr,
                         size_t memsize, unsigned long permissions)
 {
-    region_t *region = (region_t *)alloc_one_page();
+    region_t *region = (region_t *)kmalloc(sizeof(region_t));
 
     region->base = vaddr & PAGE_MASK;
     region->top = ((vaddr + memsize) & PAGE_MASK);
@@ -85,7 +92,13 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
                                 seL4_CPtr vspace, seL4_Word vaddr, frame_ref_t frame,
                                 cspace_t *source_cspace, seL4_CPtr source)
 {
-    cap_list_t *list = addrspace->cap_list; 
+    //printf("%p -> %p\n", vaddr, addrspace_lookup(addrspace, vaddr));
+    // if (addrspace_lookup(addrspace, vaddr) != 0) {
+    //     printf("skipped\n");
+    //     return 0;
+    // }
+
+    cap_list_t *list = addrspace->cap_list;
 
     seL4_Error err = cspace_copy(target_cspace, target, source_cspace, source, seL4_AllRights);
     if (err != seL4_NoError) {
@@ -113,26 +126,64 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
     }
     for (size_t i = 0; i < MAPPING_SLOTS; i++) {
         if (used & BIT(i)) {
+            //printf("used %lu\n", i);
             cap_list_insert(list, free_slots[i]);
         } else {
             cspace_delete(target_cspace, free_slots[i]);
             cspace_free_slot(target_cspace, free_slots[i]);
         }
     }
-    cap_list_insert(list, target);
+    //printf("addr %p mappin %p used cap\n", addrspace, vaddr);
+    //cap_list_insert(list, target);
     return err;
 }
 
-seL4_Error addrspace_map_one_page(addrspace_t *addrspace, cspace_t *target_cspace, seL4_CPtr target, 
-                        seL4_CPtr vspace, seL4_Word vaddr, cspace_t *source_cspace, seL4_CPtr source)
+seL4_Error addrspace_map_one_page(addrspace_t *target_addrspace, cspace_t *target_cspace,
+                                    seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
+                                    addrspace_t *source_addrspace, cspace_t *source_cspace,
+                                    seL4_Word source_vaddr)
 {
-    seL4_Error err = addrspace_map_impl(addrspace, target_cspace, target, 
-                                vspace, vaddr, NULL,
-                                source_cspace, source);
+    frame_ref_t frame = addrspace_lookup(source_addrspace, source_vaddr);
+    seL4_Error err = addrspace_map_impl(target_addrspace, target_cspace, target, 
+                                vspace, target_vaddr, frame,
+                                source_cspace, frame_page(frame));
     if (err) {
         cspace_delete(target_cspace, target);
         cspace_free_slot(target_cspace, target);
     }
+    return err;
+}
+
+seL4_Error addrspace_map_one_frame(addrspace_t *target_addrspace, cspace_t *target_cspace,
+                                    seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
+                                    frame_ref_t frame)
+{
+    seL4_Error err = addrspace_map_impl(target_addrspace, target_cspace, target, 
+                                vspace, target_vaddr, frame,
+                                frame_table_cspace(), frame_page(frame));
+    if (err) {
+        cspace_delete(target_cspace, target);
+        cspace_free_slot(target_cspace, target);
+    }
+    return err;
+}
+
+seL4_Error addrspace_unmap(addrspace_t *addrspace, cspace_t *cspace,
+                            seL4_CPtr frame_cap, seL4_Word vaddr)
+{
+    pagetable_delete(addrspace->table, vaddr);
+
+    /* unmap our copy of the stack */
+    seL4_Error err = seL4_ARM_Page_Unmap(frame_cap);
+    assert(err == seL4_NoError);
+
+    /* delete the copy of the stack frame cap */
+    err = cspace_delete(cspace, frame_cap);
+    assert(err == seL4_NoError);
+
+    /* mark the slot as free */
+    cspace_free_slot(cspace, frame_cap);
+
     return err;
 }
 
@@ -160,7 +211,7 @@ seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace
 
 cap_list_t *cap_list_create()
 {
-    cap_list_t *list = (cap_list_t *)alloc_one_page();
+    cap_list_t *list = (cap_list_t *)kmalloc(sizeof(cap_list_t));
     list->size = 0;
     list->next = NULL;
     return list;
@@ -168,11 +219,21 @@ cap_list_t *cap_list_create()
 
 void cap_list_insert(cap_list_t *list, seL4_CPtr cap)
 {
-    while (list->size == CAPACITY) {
+    assert(list != NULL);
+    while (list->next != NULL) { list = list->next; }
+    if (list->size == CAPACITY) {
+        list->next = cap_list_create();
         list = list->next;
     }
     list->caps[list->size++] = cap;
-    if (list->size == CAPACITY) {
-        list->next = cap_list_create();
-    }
+    // struct cap_list_node *new = (struct cap_list_node *)kmalloc(sizeof(struct cap_list_node));
+    // new->cap = cap;
+    // struct cap_list_node *cur = list->head;
+    // if (cur == NULL) {
+    //     list->head = new;
+    //     new->next = NULL;
+    // } else {
+    //     new->next = list->head;
+    //     list->head = new;
+    // }
 }

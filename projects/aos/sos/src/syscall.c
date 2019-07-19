@@ -34,7 +34,9 @@ void *syscall_open_handler(void *cur_proc)
                     mapped);
 
     seL4_SetMR(0, vfs_open(proc->fdt, path_vaddr, (fmode_t)mode));
-    
+
+    process_unmap(proc, global_addrspace, mapped);
+    kfree(mapped);
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
     seL4_Send(proc->reply, reply_msg);
 }
@@ -54,7 +56,7 @@ void *syscall_write_handler(void *cur_proc)
                             global_addrspace, global_vspace,
                             mapped);
         int actual = vfs_write(proc->fdt, seL4_GetMR(3), vaddr, size);
-        process_unmap(proc, mapped);
+        process_unmap(proc, global_addrspace, mapped);
         kfree(mapped);
         seL4_SetMR(0, actual);
     } else {
@@ -82,7 +84,7 @@ void *syscall_read_handler(void *cur_proc)
                             mapped);
         int actual = vfs_read(proc->fdt, seL4_GetMR(3), vaddr, size);
         //printf("read actul %d\n", actual);
-        process_unmap(proc, mapped);
+        process_unmap(proc, global_addrspace, mapped);
         kfree(mapped);
         seL4_SetMR(0, actual);
     } else {
@@ -122,7 +124,7 @@ void *syscall_getdirent_handler(void *cur_proc)
                     global_addrspace, global_vspace,
                     mapped);
     seL4_SetMR(0, vfs_getdirent((int)pos, name_vaddr, (size_t )nbyte));
-    process_unmap(proc, mapped);
+    process_unmap(proc, global_addrspace, mapped);
     kfree(mapped);
     
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
@@ -144,9 +146,9 @@ void *syscall_stat_handler(void *cur_proc)
                     global_addrspace, global_vspace,
                     mapped_buf);
     seL4_SetMR(0, vfs_stat(path_vaddr, buf_vaddr));
-    process_unmap(proc, mapped_path);
+    process_unmap(proc, global_addrspace, mapped_path);
     kfree(mapped_path);
-    process_unmap(proc, mapped_buf);
+    process_unmap(proc, global_addrspace, mapped_buf);
     kfree(mapped_buf);
     
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
@@ -252,4 +254,19 @@ void do_jobs()
     } else {
         kfree(job);
     }
+}
+
+cspace_t *get_global_cspace()
+{
+    return global_cspace;
+}
+
+seL4_CPtr get_global_vspace()
+{
+    return global_vspace;
+}
+
+addrspace_t *get_global_addrspace()
+{
+    return global_addrspace;
 }

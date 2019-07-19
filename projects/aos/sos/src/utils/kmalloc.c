@@ -1,11 +1,12 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "kmalloc.h"
-#include "../frame_table.h"
 
 #define CAPACITY ((1<<12) - sizeof(struct _list *) - sizeof(int))/sizeof(node)
 
 static int t1 = 0;
+static unsigned int used = 0;
 
 typedef struct _node {
     void *location;
@@ -23,7 +24,7 @@ static list *free_list = NULL;
 
 list *list_ini()
 {
-    list *new_list = (list *)alloc_one_page();
+    list *new_list = (list *)malloc(1<<12);
     new_list->size = 0;
     new_list->next = NULL;
     return new_list;
@@ -137,9 +138,12 @@ if (t1++ == 10) { debug_print(); t1 = 0; }
                           .size = free_node.size - size };
             list_appen(free_list, new_free_node);
         }
+        used += size;
+        printf("%p        alloc       %u(%u)\n", free_node.location, used, size);
+        memset(free_node.location, 0, size);
         return free_node.location;
     } else {
-        void *new_frame = alloc_one_page();
+        void *new_frame = malloc(1<<12);
         node new_node = { .location = new_frame, .size = (1<<12)};
         list_appen(free_list, new_node);
         return kmalloc(size);
@@ -176,6 +180,9 @@ void kfree(void *p)
     int found = (target_node.location != 0 && target_node.size != 0);
     if (!found) { return; }
 
+    used -= target_node.size;
+    printf("%p        free        %u(%u)\n", p, used, target_node.size);
+
     memset(target_node.location, 0, target_node.size);
     list_del_node(allocated_list, target_node);
     list_appen(free_list, target_node);
@@ -198,34 +205,34 @@ void kfree(void *p)
 
 void kmalloc_tests()
 {
-    void *p1 = kmalloc(10);
-//debug_print();
-    void *p2 = kmalloc(20);
-    assert(p1 + 10 == p2);
-//debug_print();
-    void *p3 = kmalloc(4096);
-//debug_print();
-    void *p4 = kmalloc(96);
-//debug_print();
+//     void *p1 = kmalloc(10);
+// //debug_print();
+//     void *p2 = kmalloc(20);
+//     assert(p1 + 10 == p2);
+// //debug_print();
+//     void *p3 = kmalloc(4096);
+// //debug_print();
+//     void *p4 = kmalloc(96);
+// //debug_print();
 
-    kfree(p2);
-//debug_print();
-    void *p5 = kmalloc(20);
-    //assert(p2 == p5);
+//     kfree(p2);
+// //debug_print();
+//     void *p5 = kmalloc(20);
+//     //assert(p2 == p5);
 
-
-    
-debug_print();
-    kfree(p3);
-debug_print();
-    kfree(p1);
-debug_print();
-    kfree(p5);
-    debug_print();
-
-    kfree(p4);
-    
 
     
-debug_print();
+// debug_print();
+//     kfree(p3);
+// debug_print();
+//     kfree(p1);
+// debug_print();
+//     kfree(p5);
+//     debug_print();
+
+//     kfree(p4);
+    
+
+    
+// debug_print();
 }

@@ -19,3 +19,7 @@ void sos_handle_syscall(process_t *proc);
 bool sos_handle_page_fault(process_t *proc, seL4_Word fault_address);
 
 void do_jobs();
+
+cspace_t *get_global_cspace();
+seL4_CPtr get_global_vspace();
+addrspace_t *get_global_addrspace();

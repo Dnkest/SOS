@@ -10,6 +10,7 @@
 #include "vmem_layout.h"
 #include "utils/kmalloc.h"
 #include "fs/fd_table.h"
+#include "vft.h"
 
 #define TTY_PRIORITY         (0)
 #define TTY_EP_BADGE         (101)
@@ -54,12 +55,13 @@ static ut_t *process_alloc_retype(process_t *proc, seL4_CPtr *cptr, seL4_Word ty
 process_t *process_create(cspace_t *cspace, char *cpio_archive, char *cpio_archive_end)
 {
     id_table = id_table_init(SOS_MAP, PAGE_SIZE_4K, 100);
-    process_t *proc = (process_t *)alloc_one_page();
+    process_t *proc = (process_t *)kmalloc(sizeof(process_t));
     proc->fdt = fdt_init();
     proc->global_cspace = cspace;
     proc->addrspace = addrspace_create();
     proc->cpio_archive = cpio_archive;
     proc->cpio_archive_end = cpio_archive_end;
+    print_limit();
     return proc;
 }
 
@@ -238,7 +240,7 @@ seL4_Word process_init_stack(process_t *proc, cspace_t *cspace, addrspace_t *glo
     }
 
     err = addrspace_map_one_page(global_addrspace, cspace, local_stack, global_vspace,
-                                    local_stack_bottom, cspace, user_stack);
+                    local_stack_bottom, addrspace, cspace, stack_bottom);
     if (err) {
         ZF_LOGE("Unable to map stack for sos");
         return 0;
@@ -340,39 +342,42 @@ seL4_Word process_map(process_t *proc, seL4_Word user_vaddr, seL4_Word size,
 
     mapped->num_pages = num_pages;
     mapped->frame_caps = (seL4_CPtr *)kmalloc(num_pages *sizeof(seL4_CPtr));
+    mapped->vaddrs = (seL4_Word *)kmalloc(num_pages *sizeof(seL4_Word));
     seL4_Word kernel_base_vaddr = id_alloc(id_table, num_pages);
-    mapped->vaddr = kernel_base_vaddr;
-
+    
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
-        seL4_CPtr user_frame_cap = frame_page(addrspace_lookup(proc->addrspace, user_vaddr_tmp));
-
+        //printf("mapping %p --> %p\n", user_vaddr_tmp, kernel_vaddr_tmp);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(proc->global_cspace);
         if (kernel_frame_cap == seL4_CapNull) {
             ZF_LOGE("Failed to alloc slot for stack");
             return 0;
         }
         seL4_Error err = addrspace_map_one_page(global_addrspace, proc->global_cspace,
-                        kernel_frame_cap, global_vspace, kernel_vaddr_tmp, frame_table_cspace(), user_frame_cap);
+                        kernel_frame_cap, global_vspace, kernel_vaddr_tmp, proc->addrspace,
+                        frame_table_cspace(), user_vaddr_tmp);
         if (err) {
             ZF_LOGE("mapping user address failed");
             return 0;
         }
         mapped->frame_caps[i] = kernel_frame_cap;
+        mapped->vaddrs[i] = kernel_vaddr_tmp;
         user_vaddr_tmp += PAGE_SIZE_4K;
         kernel_vaddr_tmp += PAGE_SIZE_4K;
+        //printf("%lu i\n", i);
     }
     seL4_Word ret = kernel_base_vaddr + user_vaddr - user_base_vaddr;
     return ret;
 }
 
-void process_unmap(process_t *proc, proc_map_t *mapped)
+void process_unmap(process_t *proc, addrspace_t *global_addrspace, proc_map_t *mapped)
 {
     for (unsigned int i = 0; i < mapped->num_pages; i++) {
-        seL4_ARM_Page_Unmap(mapped->frame_caps[i]);
-        cspace_delete(proc->global_cspace, mapped->frame_caps[i]);
-        cspace_free_slot(proc->global_cspace, mapped->frame_caps[i]);
+        addrspace_unmap(global_addrspace, proc->global_cspace,
+                        mapped->frame_caps[i], mapped->vaddrs[i]);
     }
+
     kfree(mapped->frame_caps);
-    id_free(id_table, mapped->vaddr, mapped->num_pages);
+    id_free(id_table, mapped->vaddrs[0], mapped->num_pages);
+    kfree(mapped->vaddrs);
 }

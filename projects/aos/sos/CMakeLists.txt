@@ -51,6 +51,7 @@ add_executable(
     src/mapping.c
     src/network.c
     src/ut.c
+    src/vft.c
     src/tests.c
     src/sys/backtrace.c
     src/sys/exit.c

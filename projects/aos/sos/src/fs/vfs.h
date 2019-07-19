@@ -7,6 +7,7 @@
 
 int vfs_open(fd_table_t *table, const char *path, fmode_t mode);
 int vfs_write(fd_table_t *table, int file, const char *buf, size_t nbyte);
+int vfs_pwrite(fd_table_t *table, int file, const char *buf, size_t offset, size_t nbyte);
 int vfs_read(fd_table_t *table, int file, char *buf, size_t nbyte);
 int vfs_getdirent(int pos, char *name, size_t nbyte);
 int vfs_stat(const char *path, sos_stat_t *buf);
