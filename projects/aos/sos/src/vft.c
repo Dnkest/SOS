@@ -7,6 +7,7 @@
 #include "utils/idalloc.h"
 #include "frame_table.h"
 #include "paging.h"
+#include "vmem_layout.h"
 
 #define MAX_FRAMES 2000
 #define TMP 0x600000000000
@@ -30,14 +31,14 @@ static unsigned long int ptr = 0;
 
 int vft_set_reference(vframe_ref_t vframe, seL4_CPtr vspace, seL4_Word vaddr)
 {
-    //int found = 0;
+    int found = 0;
     for (int i = 0; i < CONFIG_SOS_FRAME_LIMIT-1; i++) {
         if (frames[i].vframe_ref == vframe) {
             frames[i].reference = 1;
-            //found = 1;
+            found = 1;
         }
     }
-    //if (!found) { return 0; }
+    if (!found && vaddr != PROCESS_IPC_BUFFER) { return 0; }
 
     //printf("remapping %u . %p\n", vframe, framecaps[vframe]);
     seL4_CPtr frame_cap = cspace_alloc_slot(get_global_cspace());

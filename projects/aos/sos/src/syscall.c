@@ -22,6 +22,8 @@ static addrspace_t *global_addrspace;
 typedef void *(*syscall_handler_t)(void *);
 static syscall_handler_t handlers[SYSCALL_MAX];
 
+static int done = 0;
+
 void *syscall_open_handler(void *cur_proc)
 {
     process_t *proc = (process_t *)cur_proc;
@@ -220,16 +222,43 @@ void sos_handle_syscall(process_t *proc)
 bool sos_handle_page_fault(process_t *proc, seL4_Word fault_address)
 {
     printf("faultaddress-> %p\n", fault_address);
-    seL4_Word vaddr = fault_address & MASK;
-    if (addrspace_check_valid_region(proc->addrspace, fault_address) || 1) {
 
-        addrspace_set_reference(proc->addrspace, proc->vspace, vaddr);
+    seL4_CPtr reply = cspace_alloc_slot(proc->global_cspace);
+    seL4_Error err = cspace_save_reply_cap(proc->global_cspace, reply);
+    ZF_LOGF_IFERR(err, "Failed to save reply");
+
+    proc->reply = reply;
+
+    seL4_Word vaddr = fault_address & MASK;
+    if (fault_address && addrspace_check_valid_region(proc->addrspace, fault_address) || 1) {
+
+        int present = addrspace_set_reference(proc->addrspace, proc->vspace, vaddr);
+
+        if (!present) {
+            vframe_ref_t vframe = addrspace_lookup_vframe(proc->addrspace, fault_address);
+            if (vframe == 0) {
+                seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace);
+                if (frame_cap == seL4_CapNull) {
+                    free_frame(frame_cap);
+                    ZF_LOGE("Failed to alloc slot for frame");
+                }
+
+                seL4_Error err = addrspace_alloc_map_one_page(proc->addrspace, global_cspace,
+                        frame_cap, proc->vspace, fault_address & MASK);
+                if (err) {
+                    ZF_LOGE("Failed to copy cap");
+                }
+
+            } else {
+                frame_ref_from_v(vframe);
+            }
+        }
         seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-        seL4_Reply(reply_msg);
+        seL4_Send(proc->reply, reply_msg);
         return true;
     }
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-    seL4_Reply(reply_msg);
+    seL4_Send(proc->reply, reply_msg);
     return false;
 }
 

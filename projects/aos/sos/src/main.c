@@ -79,7 +79,10 @@ static addrspace_t *global_addrspace;
 
 static coro c;
 static coro proc_c;
+static coro vm_c;
 static int proc_ready = 0;
+
+static int no_vm_fault = 1;
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *alloc_retype(seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -122,6 +125,12 @@ void *proc_init(void *p)
             proc_ready = 1;
 }
 
+void *handle_vm_fault(void *p)
+{
+    sos_handle_page_fault(cur_proc(), seL4_GetMR(seL4_VMFault_Addr));
+    no_vm_fault = 1;
+}
+
 NORETURN void syscall_loop(seL4_CPtr ep)
 {
     c = coroutine(pagefile_init, BIT(14));
@@ -133,6 +142,8 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else if (pagefile_ready() && resumable(proc_c) && !proc_ready) {
     
             resume(proc_c, (void *)ep);
+        } else if (proc_ready && vm_c != NULL && resumable(vm_c) && !no_vm_fault) {
+            resume(vm_c, NULL);
         }
 
         if (proc_ready) { do_jobs(); }
@@ -149,20 +160,15 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             /* It's a notification from our bound notification
              * object! */
             sos_handle_irq_notification(&badge);
-        } else if (proc_ready && label == seL4_Fault_NullFault) {
+        } else if (no_vm_fault && proc_ready && label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from tty_test! */
             //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
             sos_handle_syscall(cur_proc());
         } else if (proc_ready && label == seL4_Fault_VMFault) {
-            if (!sos_handle_page_fault(cur_proc(), seL4_GetMR(seL4_VMFault_Addr))) {
-                /* some kind of fault */
-                debug_print_fault(message, TTY_NAME);
-                /* dump registers too */
-                //debug_dump_registers(tty_test_process.tcb);
-
-                ZF_LOGF("Invalid region accessed!");
-            }
+            no_vm_fault = 0;
+            vm_c = coroutine(handle_vm_fault, BIT(14));
+            resume(vm_c, NULL);
         } else {
             printf("here\n");
             /* some kind of fault */

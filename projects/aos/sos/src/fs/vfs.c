@@ -58,7 +58,7 @@ int vfs_write(fd_table_t *table, int file, const char *buf, size_t nbyte)
         // nbyte = (offset >= file_size) ? 0 : file_size - offset;
         // printf("nbyte %lu\n", nbyte);
         // if (nbyte == 0) { return 0; }
-        printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
+        //printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
         int written = e->vnode->write_f(fh, buf, offset, nbyte);
         e->offset += written;
         return written;
@@ -79,7 +79,7 @@ int vfs_pwrite(fd_table_t *table, int file, const char *buf, size_t offset, size
         // nbyte = (offset >= file_size) ? 0 : file_size - offset;
         // printf("nbyte %lu\n", nbyte);
         // if (nbyte == 0) { return 0; }
-        printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
+        //printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
         int written = e->vnode->write_f(fh, buf, offset, nbyte);
         e->offset += written;
         return written;
@@ -100,7 +100,7 @@ int vfs_read(fd_table_t *table, int file, char *buf, size_t nbyte)
         if (offset >= file_size) { return 0; }
         if (file_size - offset < nbyte) { nbyte = file_size - offset; }
 
-        printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
+        //printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
         int read = e->vnode->read_f(fh, buf, offset, nbyte);
         e->offset += read;
         return read;
@@ -121,7 +121,7 @@ int vfs_pread(fd_table_t *table, int file, char *buf, size_t offset, size_t nbyt
         //if (offset >= file_size) { return 0; }
         //if (file_size - offset < nbyte) { nbyte = file_size - offset; }
 
-        printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
+        //printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
         int read = e->vnode->read_f(fh, buf, offset, nbyte);
         e->offset += read;
         return read;
