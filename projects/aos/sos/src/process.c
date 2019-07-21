@@ -239,10 +239,20 @@ seL4_Word process_init_stack(process_t *proc, cspace_t *cspace, addrspace_t *glo
         return 0;
     }
 
-    err = addrspace_map_one_page(global_addrspace, cspace, local_stack, global_vspace,
-                    local_stack_bottom, addrspace, cspace, stack_bottom);
-    if (err) {
-        ZF_LOGE("Unable to map stack for sos");
+    /* copy the stack frame cap into the slot */
+    err = cspace_copy(cspace, local_stack, cspace, proc->stack, seL4_AllRights);
+    if (err != seL4_NoError) {
+        cspace_free_slot(cspace, local_stack);
+        ZF_LOGE("Failed to copy cap");
+        return 0;
+    }
+
+    /* map it into the sos address space */
+    err = map_frame(cspace, local_stack, global_vspace, local_stack_bottom, seL4_AllRights,
+                    seL4_ARM_Default_VMAttributes);
+    if (err != seL4_NoError) {
+        cspace_delete(cspace, local_stack);
+        cspace_free_slot(cspace, local_stack);
         return 0;
     }
 
@@ -310,6 +320,7 @@ seL4_Word process_init_stack(process_t *proc, cspace_t *cspace, addrspace_t *glo
             ZF_LOGE("Unable to map extra stack frame for user app");
             return 0;
         }
+
     }
     addrspace_define_region(proc->addrspace, PROCESS_STACK_BOTTOM, 
                             PROCESS_STACK_TOP-PROCESS_STACK_BOTTOM, 0b110);
@@ -347,7 +358,7 @@ seL4_Word process_map(process_t *proc, seL4_Word user_vaddr, seL4_Word size,
     
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
-        //printf("mapping %p --> %p\n", user_vaddr_tmp, kernel_vaddr_tmp);
+        //printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i, num_pages);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(proc->global_cspace);
         if (kernel_frame_cap == seL4_CapNull) {
             ZF_LOGE("Failed to alloc slot for stack");

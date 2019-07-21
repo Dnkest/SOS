@@ -13,7 +13,12 @@ int vfs_open(fd_table_t *table, const char *path, fmode_t mode)
     if (strcmp(path, "console") == 0) {
         printf("openning console %x\n", mode);
         return serial_open(table, mode);
-    } else {
+    }
+    // else if (strcmp(path, "pagefile") == 0) {
+    //     printf("openning %s %x\n", path, mode);
+    //     return sos_nfs_open_b(table, path, mode);
+    // } 
+    else {
         printf("openning %s %x\n", path, mode);
         return sos_nfs_open(table, path, mode);
     }

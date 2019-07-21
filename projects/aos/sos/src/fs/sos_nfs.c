@@ -41,8 +41,9 @@ void nfs_read_callback(int err, struct nfs_context *nfs, void *data,
 
 int sos_nfs_open(fd_table_t *table, const char *path, fmode_t mode)
 {
-    while (!nfs) { yield(0); }
-
+    while (!nfs) { //printf(" not ready yet ?\n");
+    yield(0); }
+//printf(" ready !\n");
     vnode_t *vnode = vnode_init(sos_nfs_close, sos_nfs_read, sos_nfs_write);
 
     nfs_data_t nfs_d = { .data = NULL, .err = 0, .done = 0};
@@ -157,4 +158,64 @@ int sos_nfs_stat(const char *path, sos_stat_t *buf)
 void sos_nfs_set_context(struct nfs_context *context)
 {
     nfs = context;
+}
+
+struct nfs_context *sos_nfs_get_context()
+{
+    return nfs;
+}
+
+int sos_nfs_open_b(fd_table_t *table, const char *path, fmode_t mode)
+{
+    if (!nfs) { printf("not ready\n"); return 0; }
+
+    
+    vnode_t *vnode = vnode_init(sos_nfs_close, sos_nfs_read, sos_nfs_write);
+
+    nfs_data_t nfs_d = { .data = NULL, .err = 0, .done = 0};
+    nfs_creat_async(nfs, path, 0666, nfs_callback, &nfs_d);
+    while (!nfs_d.done) {}
+
+    nfs_data_t nfs_d2 = { .data = NULL, .err = 0, .done = 0};
+    nfs_open_async(nfs, path, mode, nfs_callback, &nfs_d);
+    while (!nfs_d2.done) {}
+    
+    vnode->fh = (struct nfsfh *)nfs_d.data;
+
+    return fdt_insert(table, path, 0xfffffffff, vnode, mode);
+}
+
+int sos_nfs_read_b(struct nfsfh *fh, char *buf, size_t offset, size_t nbyte)
+{
+    while (!nfs) {}
+
+    nfs_read_data_t nfs_d = { .buf = buf, .err = 0, .done = 0, .nbyte = nbyte };
+    
+    nfs_pread_async(nfs, fh, offset, nbyte, nfs_read_callback, &nfs_d);
+    while (!nfs_d.done) {}
+
+    return nbyte;
+}
+
+int sos_nfs_write_b(struct nfsfh *fh, char *buf, size_t offset, size_t nbyte)
+{
+    while (!nfs) {}
+
+    nfs_data_t nfs_d = { .data = NULL, .err = 0, .done = 0};
+    
+    nfs_pwrite_async(nfs, fh, offset, nbyte, buf, nfs_callback, &nfs_d);
+    while (!nfs_d.done) {}
+    //printf("write %d\n", nfs_d.data);
+    return nbyte;
+}
+
+void sos_nfs_lseek(struct nfsfh *fh, size_t offset)
+{
+    while (!nfs) {}
+
+    nfs_data_t nfs_d = { .data = NULL, .err = 0, .done = 0};
+    
+    nfs_lseek_async(nfs, fh, offset, SEEK_SET, nfs_callback, &nfs_d);
+
+    while (!nfs_d.done) {}
 }

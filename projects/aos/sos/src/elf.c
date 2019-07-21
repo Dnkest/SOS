@@ -110,14 +110,20 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         }
 
         /* finally copy the data */
-        frame_ref_t frame = addrspace_lookup(addrspace, loadee_vaddr);
-        unsigned char *loader_data = frame_data(frame);
+        vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, loadee_vaddr);
+        //frame_ref_t frame = addrspace_fetch_frame(addrspace, loadee_vaddr);
+        //printf("%p->%u\n", loadee_vaddr, vframe);
+        frame_ref_t frame = frame_ref_from_v(vframe);
 
+        unsigned char *loader_data = frame_data(frame);
+//printf("cop frame %p\n", frame_data(frame));
         /* Write any zeroes at the start of the block. */
         size_t leading_zeroes = dst % PAGE_SIZE_4K;
         memset(loader_data, 0, leading_zeroes);
         loader_data += leading_zeroes;
-
+        //int *p = 0x8200002000;
+  //printf("t %d\n", *p);      
+//printf("loader_data %p\n", loader_data);
         /* Copy the data from the source. */
         size_t segment_bytes = PAGE_SIZE_4K - leading_zeroes;
         size_t file_bytes = MIN(segment_bytes, file_size - pos);
@@ -127,7 +133,7 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
             memset(loader_data, 0, file_bytes);
         }
         loader_data += file_bytes;
-
+//printf("2\n");
         /* Fill in the end of the frame with zereos */
         size_t trailing_zeroes = PAGE_SIZE_4K - (leading_zeroes + file_bytes);
         memset(loader_data, 0, trailing_zeroes);
@@ -145,6 +151,7 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         pos += segment_bytes;
         dst += segment_bytes;
         src += segment_bytes;
+//printf("3\n");
     }
     return 0;
 }

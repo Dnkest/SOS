@@ -76,6 +76,7 @@ add_executable(
     src/utils/kmalloc.c
     src/utils/idalloc.c
     src/utils/jobq.c
+    src/paging.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

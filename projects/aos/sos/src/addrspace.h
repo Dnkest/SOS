@@ -29,7 +29,8 @@ typedef struct addrspace {
 
 addrspace_t *addrspace_create();
 
-frame_ref_t addrspace_lookup(addrspace_t *addrspace, seL4_Word vaddr);
+frame_ref_t addrspace_lookup_vframe(addrspace_t *addrspace, seL4_Word vaddr);
+seL4_Word addrspace_lookup_frame_cap(addrspace_t *addrspace, seL4_Word vaddr);
 
 bool addrspace_check_valid_region(addrspace_t *addrspace, seL4_Word fault_address);
 
@@ -48,3 +49,7 @@ seL4_Error addrspace_map_one_frame(addrspace_t *target_addrspace, cspace_t *targ
                                     frame_ref_t frame);
 seL4_Error addrspace_unmap(addrspace_t *addrspace, cspace_t *cspace,
                             seL4_CPtr frame_cap, seL4_Word vaddr);
+
+void addrspace_unmap_all(addrspace_t *addrspace);
+frame_ref_t addrspace_fetch_frame(addrspace_t *addrspace, seL4_Word vaddr);
+int addrspace_set_reference(addrspace_t *addrspace, seL4_CPtr vspace, seL4_Word vaddr);

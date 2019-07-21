@@ -8,6 +8,7 @@
 #include "fs/vfs.h"
 #include "utils/kmalloc.h"
 #include "utils/jobq.h"
+#include "fs/serial.h"
 
 #define MASK 0xfffffffff000
 
@@ -49,13 +50,17 @@ void *syscall_write_handler(void *cur_proc)
         size = 0b101111111111111111;
     }
     seL4_Word user_vaddr = seL4_GetMR(2);
+    int file = seL4_GetMR(3);
+    
 
     if (size != 0) {
         proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
         seL4_Word vaddr = process_map(proc, user_vaddr, size,
                             global_addrspace, global_vspace,
                             mapped);
-        int actual = vfs_write(proc->fdt, seL4_GetMR(3), vaddr, size);
+
+        int actual = vfs_write(proc->fdt, file, vaddr, size);
+
         process_unmap(proc, global_addrspace, mapped);
         kfree(mapped);
         seL4_SetMR(0, actual);
@@ -76,13 +81,14 @@ void *syscall_read_handler(void *cur_proc)
         size = 0b101111111111111111;
     }
     seL4_Word user_vaddr = seL4_GetMR(2);
+    int file = seL4_GetMR(3);
 
     if (size != 0) {
         proc_map_t *mapped = (proc_map_t *)kmalloc(sizeof(proc_map_t));
         seL4_Word vaddr = process_map(proc, user_vaddr, size,
                             global_addrspace, global_vspace,
                             mapped);
-        int actual = vfs_read(proc->fdt, seL4_GetMR(3), vaddr, size);
+        int actual = vfs_read(proc->fdt, file, vaddr, size);
         //printf("read actul %d\n", actual);
         process_unmap(proc, global_addrspace, mapped);
         kfree(mapped);
@@ -189,7 +195,7 @@ void dispatch_syscall(process_t *proc, int syscall_number)
 
     proc->reply = reply;
 
-    coro c = coroutine(handlers[syscall_number], BIT(14));
+    coro c = coroutine(handlers[syscall_number], BIT(16));
     proc = resume(c, (void *)proc);
 
     if (resumable(c)) {
@@ -214,21 +220,10 @@ void sos_handle_syscall(process_t *proc)
 bool sos_handle_page_fault(process_t *proc, seL4_Word fault_address)
 {
     printf("faultaddress-> %p\n", fault_address);
-    if (addrspace_check_valid_region(proc->addrspace, fault_address)) {
+    seL4_Word vaddr = fault_address & MASK;
+    if (addrspace_check_valid_region(proc->addrspace, fault_address) || 1) {
 
-        seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace);
-        if (frame_cap == seL4_CapNull) {
-            free_frame(frame_cap);
-            ZF_LOGE("Failed to alloc slot for frame");
-            return false;
-        }
-
-        seL4_Error err = addrspace_alloc_map_one_page(proc->addrspace, global_cspace, frame_cap,
-                                   proc->vspace, fault_address & MASK);
-        if (err) {
-            ZF_LOGE("Failed to copy cap");
-            return false;
-        }
+        addrspace_set_reference(proc->addrspace, proc->vspace, vaddr);
         seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         seL4_Reply(reply_msg);
         return true;

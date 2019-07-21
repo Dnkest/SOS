@@ -19,6 +19,7 @@
 #include <cspace/cspace.h>
 #include <aos/sel4_zf_logif.h>
 #include <aos/debug.h>
+#include "picoro/picoro.h"
 
 #include <clock/clock.h>
 #include <cpio/cpio.h>
@@ -40,6 +41,7 @@
 #include "process.h"
 #include "utils/kmalloc.h"
 #include "utils/idalloc.h"
+#include "paging.h"
 
 #include <aos/vsyscall.h>
 
@@ -75,6 +77,10 @@ static cspace_t cspace;
 
 static addrspace_t *global_addrspace;
 
+static coro c;
+static coro proc_c;
+static int proc_ready = 0;
+
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *alloc_retype(seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
 {
@@ -105,11 +111,32 @@ static ut_t *alloc_retype(seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
     return ut;
 }
 
+void *proc_init(void *p)
+{
+            /* Start the user application */
+            printf("Start first process\n");
+            process_t *proc = process_create(&cspace, _cpio_archive, _cpio_archive_end);
+            process_start(proc, TTY_NAME, global_addrspace, (seL4_CPtr)p);
+            set_cur_proc(proc);
+            ZF_LOGF_IF(!proc, "Failed to start first process");
+            proc_ready = 1;
+}
+
 NORETURN void syscall_loop(seL4_CPtr ep)
 {
-
+    c = coroutine(pagefile_init, BIT(14));
+    proc_c = coroutine(proc_init, BIT(14));
     while (1) {
-        do_jobs();
+        if (resumable(c) && !pagefile_ready()) {
+            resume(c, NULL);
+
+        } else if (pagefile_ready() && resumable(proc_c) && !proc_ready) {
+    
+            resume(proc_c, (void *)ep);
+        }
+
+        if (proc_ready) { do_jobs(); }
+
         seL4_Word badge = 0;
         /* Block on ep, waiting for an IPC sent over ep, or
          * a notification from our bound notification object */
@@ -122,12 +149,12 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             /* It's a notification from our bound notification
              * object! */
             sos_handle_irq_notification(&badge);
-        } else if (label == seL4_Fault_NullFault) {
+        } else if (proc_ready && label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from tty_test! */
             //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
             sos_handle_syscall(cur_proc());
-        } else if (label == seL4_Fault_VMFault) {
+        } else if (proc_ready && label == seL4_Fault_VMFault) {
             if (!sos_handle_page_fault(cur_proc(), seL4_GetMR(seL4_VMFault_Addr))) {
                 /* some kind of fault */
                 debug_print_fault(message, TTY_NAME);
@@ -137,6 +164,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
                 ZF_LOGF("Invalid region accessed!");
             }
         } else {
+            printf("here\n");
             /* some kind of fault */
             debug_print_fault(message, TTY_NAME);
             /* dump registers too */
@@ -241,13 +269,6 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* You will need to register an IRQ handler for the timer here.
      * See "irq.h". */
 
-    /* Start the user application */
-    printf("Start first process\n");
-    process_t *proc = process_create(&cspace, _cpio_archive, _cpio_archive_end);
-    process_start(proc, TTY_NAME, global_addrspace, ipc_ep);
-    set_cur_proc(proc);
-    ZF_LOGF_IF(!proc, "Failed to start first process");
-
     syscall_handler_init(&cspace, seL4_CapInitThreadVSpace, global_addrspace);
 
     //kmalloc_tests();
@@ -304,18 +325,13 @@ int main(void)
      * easier to detect stack overruns */
     seL4_Word vaddr = SOS_STACK;
     for (int i = 0; i < SOS_STACK_PAGES; i++) {
+        seL4_CPtr frame_cap;
+        ut_t *frame = alloc_retype(&frame_cap, seL4_ARM_SmallPageObject, seL4_PageBits);
+        ZF_LOGF_IF(frame == NULL, "Failed to allocate stack page");
+        seL4_Error err = map_frame(&cspace, frame_cap, seL4_CapInitThreadVSpace,
+                                   vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        ZF_LOGF_IFERR(err, "Failed to map stack");
 
-        seL4_CPtr frame_cap = cspace_alloc_slot(&cspace);
-        if (frame_cap == seL4_CapNull) {
-            ZF_LOGE("Failed to alloc slot for stack extra stack frame");
-            return 0;
-        }
-        seL4_Error err = addrspace_alloc_map_one_page(global_addrspace, &cspace, frame_cap,
-                                    seL4_CapInitThreadVSpace, vaddr);
-        if (err != 0) {
-            ZF_LOGE("Unable to map extra stack frame for user app");
-            return 0;
-        }
         vaddr += PAGE_SIZE_4K;
     }
     utils_run_on_stack((void *) vaddr, main_continued, NULL);

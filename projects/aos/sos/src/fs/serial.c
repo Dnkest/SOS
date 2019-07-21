@@ -17,8 +17,6 @@ int serial_open(fd_table_t *table, fmode_t mode)
 
 int serial_write(struct nfsfh *fh, char *msg, size_t offset, size_t len)
 {
-    (void *)fh;
-    (void *)offset;
     return serial_send(sHandle, msg, (int)len);
 }
 
@@ -29,9 +27,6 @@ void serial_read_handler(struct serial *serial, char c)
 
 int serial_read(struct nfsfh *fh, char *buf, size_t unused, size_t len)
 {
-    (void *)fh;
-    (void *)unused;
-
     read_vaddr = buf;
     offset = 0;
 
@@ -46,7 +41,5 @@ int serial_read(struct nfsfh *fh, char *buf, size_t unused, size_t len)
 
 int serial_close(struct nfsfh *fh)
 {
-    (void *)fh;
-
     return 0;
 }

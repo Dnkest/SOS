@@ -139,7 +139,7 @@ if (t1++ == 10) { debug_print(); t1 = 0; }
             list_appen(free_list, new_free_node);
         }
         used += size;
-        printf("%p        alloc       %u(%u)\n", free_node.location, used, size);
+        //printf("%p        alloc       %u(%u)\n", free_node.location, used, size);
         memset(free_node.location, 0, size);
         return free_node.location;
     } else {
@@ -181,7 +181,7 @@ void kfree(void *p)
     if (!found) { return; }
 
     used -= target_node.size;
-    printf("%p        free        %u(%u)\n", p, used, target_node.size);
+    //printf("%p        free        %u(%u)\n", p, used, target_node.size);
 
     memset(target_node.location, 0, target_node.size);
     list_del_node(allocated_list, target_node);
