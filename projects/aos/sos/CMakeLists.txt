@@ -65,9 +65,6 @@ add_executable(
     src/sos.lds
     src/addrspace.c
     src/pagetable.c
-    src/addrspace.c
-    src/pagetable.c
-    src/process.c
     src/fs/fd_table.c
     src/fs/sos_nfs.c
     src/fs/vfs.c
@@ -75,8 +72,13 @@ add_executable(
     src/fs/serial.c
     src/utils/kmalloc.c
     src/utils/idalloc.c
-    src/utils/jobq.c
-    src/paging.c
+    src/utils/eventq.c
+    src/utils/pq.c
+    src/utils/q.c
+    src/pagefile.c
+    src/globals.c
+    src/proc.c
+    src/uio.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

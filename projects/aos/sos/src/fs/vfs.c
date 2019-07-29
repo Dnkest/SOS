@@ -11,16 +11,21 @@
 int vfs_open(fd_table_t *table, const char *path, fmode_t mode)
 {
     if (strcmp(path, "console") == 0) {
-        printf("openning console %x\n", mode);
-        return serial_open(table, mode);
-    }
-    // else if (strcmp(path, "pagefile") == 0) {
-    //     printf("openning %s %x\n", path, mode);
-    //     return sos_nfs_open_b(table, path, mode);
-    // } 
-    else {
-        printf("openning %s %x\n", path, mode);
-        return sos_nfs_open(table, path, mode);
+        //printf("openning console %x\n", mode);
+        vnode_t *vnode = vnode_init(serial_close, serial_read, serial_write);
+        if (serial_open(mode)) { return -1; }
+        return fdt_insert(table, "console", 0xffffffffffffffff, vnode, mode);
+    } else {
+        //printf("openning %s %x\n", path, mode);
+        vnode_t *vnode = vnode_init(sos_nfs_close, sos_nfs_read, sos_nfs_write);
+
+        if (sos_nfs_open(&vnode->fh, path, mode)) { return -1; }
+
+        sos_stat_t stat_buf;
+        if (sos_nfs_stat(path, &stat_buf)) { return -1; }
+        //printf("%s has file size %lu\n", path, stat_buf.st_size);
+
+        return fdt_insert(table, path, stat_buf.st_size, vnode, mode);
     }
 }
 
@@ -48,82 +53,28 @@ int vfs_write(fd_table_t *table, int file, const char *buf, size_t nbyte)
 {
     if (!fdt_entry_exists(table, file)) { return -1; }
     fd_entry_t *e = table->entries[file];
-    if (strcmp(e->path, "console") == 0) {
-        return e->vnode->write_f(0, buf, 0, nbyte);
-    } else {
-        struct nfsfh *fh = e->vnode->fh;
-        //size_t file_size = e->size;
-        size_t offset = e->offset;
-        // printf("1writing %d, %s, %lu->%lu\n", file, buf, offset, nbyte);
-        // nbyte = (offset >= file_size) ? 0 : file_size - offset;
-        // printf("nbyte %lu\n", nbyte);
-        // if (nbyte == 0) { return 0; }
-        //printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
-        int written = e->vnode->write_f(fh, buf, offset, nbyte);
-        e->offset += written;
-        return written;
-    }
-}
 
-int vfs_pwrite(fd_table_t *table, int file, const char *buf, size_t offset, size_t nbyte)
-{
-    if (!fdt_entry_exists(table, file)) { return -1; }
-    fd_entry_t *e = table->entries[file];
-    if (strcmp(e->path, "console") == 0) {
-        return e->vnode->write_f(0, buf, 0, nbyte);
-    } else {
-        struct nfsfh *fh = e->vnode->fh;
-        //size_t file_size = e->size;
-        //size_t offset = e->offset;
-        // printf("1writing %d, %s, %lu->%lu\n", file, buf, offset, nbyte);
-        // nbyte = (offset >= file_size) ? 0 : file_size - offset;
-        // printf("nbyte %lu\n", nbyte);
-        // if (nbyte == 0) { return 0; }
-        //printf("writing %d, offset:%lu(%lu)\n", file, offset, nbyte);
-        int written = e->vnode->write_f(fh, buf, offset, nbyte);
-        e->offset += written;
-        return written;
-    }
+    struct nfsfh *fh = e->vnode->fh;
+    size_t offset = e->offset;
+
+    int written = e->vnode->write_f(fh, buf, offset, nbyte);
+    e->offset += written;
+    return written;
 }
 
 int vfs_read(fd_table_t *table, int file, char *buf, size_t nbyte)
 {
     if (!fdt_entry_exists(table, file)) { return -1; }
     fd_entry_t *e = table->entries[file];
-    if (strcmp(e->path, "console") == 0 && file == 3) {
-        return e->vnode->read_f(0, buf, 0, nbyte);
-    } else {
-        struct nfsfh *fh = e->vnode->fh;
-        size_t file_size = e->size;
-        size_t offset = e->offset;
 
-        if (offset >= file_size) { return 0; }
-        if (file_size - offset < nbyte) { nbyte = file_size - offset; }
+    struct nfsfh *fh = e->vnode->fh;
+    size_t file_size = e->size;
+    size_t offset = e->offset;
 
-        //printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
-        int read = e->vnode->read_f(fh, buf, offset, nbyte);
-        e->offset += read;
-        return read;
-    }
-}
+    if (offset >= file_size) { return 0; }
+    if (file_size - offset < nbyte) { nbyte = file_size - offset; }
 
-int vfs_pread(fd_table_t *table, int file, char *buf, size_t offset, size_t nbyte)
-{
-    if (!fdt_entry_exists(table, file)) { return -1; }
-    fd_entry_t *e = table->entries[file];
-    if (strcmp(e->path, "console") == 0 && file == 3) {
-        return e->vnode->read_f(0, buf, 0, nbyte);
-    } else {
-        struct nfsfh *fh = e->vnode->fh;
-        //size_t file_size = e->size;
-        //size_t offset = e->offset;
-
-        //if (offset >= file_size) { return 0; }
-        //if (file_size - offset < nbyte) { nbyte = file_size - offset; }
-
-        //printf("readding %d, offset:%lu(%lu)\n", file, offset, nbyte);
-        int read = e->vnode->read_f(fh, buf, offset, nbyte);
-        e->offset += read;
-        return read;
-    }
+    int read = e->vnode->read_f(fh, buf, offset, nbyte);
+    e->offset += read;
+    return read;
 }

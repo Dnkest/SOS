@@ -6,54 +6,68 @@
 #include "syscall.h"
 #include "utils/idalloc.h"
 #include "frame_table.h"
-#include "paging.h"
+#include "pagefile.h"
 #include "vmem_layout.h"
+#include "mapping.h"
 
-#define MAX_FRAMES 2000
-#define TMP 0x600000000000
+#define MAX_VFRAMES 2000
+#define TMP 0x760000000000
+
+#if CONFIG_SOS_FRAME_LIMIT == 0
+    #define MAX_PFRAMES 1
+#else
+    #define MAX_PFRAMES CONFIG_SOS_FRAME_LIMIT-1
+#endif
 
 static id_table_t *idt = NULL;
-static frame_ref_t vframes[MAX_FRAMES];
-static seL4_Word framecaps[MAX_FRAMES];
 
-typedef struct kn {
+typedef struct vframe_ent {
     frame_ref_t frame_ref;
-    seL4_Word frame_cap;
+    seL4_CPtr frame_cap;
+    seL4_Word vaddr;
+    seL4_CPtr vspace;
+} vframe_ent_t;
+
+static vframe_ent_t vframes[MAX_VFRAMES];
+
+typedef struct pframe_ent {
+    frame_ref_t frame_ref;
     vframe_ref_t vframe_ref;
     char reference;
-} kn_t;
+    char pin;
+} pframe_ent_t;
 
 static unsigned long int used = 0;
 
-static kn_t frames[CONFIG_SOS_FRAME_LIMIT-1];
+static pframe_ent_t pframes[MAX_PFRAMES];
 
 static unsigned long int ptr = 0;
 
 int vft_set_reference(vframe_ref_t vframe, seL4_CPtr vspace, seL4_Word vaddr)
 {
-    int found = 0;
-    for (int i = 0; i < CONFIG_SOS_FRAME_LIMIT-1; i++) {
-        if (frames[i].vframe_ref == vframe) {
-            frames[i].reference = 1;
-            found = 1;
-        }
-    }
-    if (!found && vaddr != PROCESS_IPC_BUFFER) { return 0; }
+    // int found = 0;
+    // for (int i = 0; i < MAX_PFRAMES; i++) {
+    //     if (frames[i].vframe_ref == vframe) {
+    //         frames[i].reference = 1;
+    //         found = 1;
+    //     }
+    // }
+    // if (!found && vaddr != PROCESS_IPC_BUFFER) { return 0; }
 
-    //printf("remapping %u . %p\n", vframe, framecaps[vframe]);
-    seL4_CPtr frame_cap = cspace_alloc_slot(get_global_cspace());
-    seL4_Error err = cspace_copy(get_global_cspace(), frame_cap, get_global_cspace(),
-                    frame_page(vframes[vframe]), seL4_AllRights);
-    assert(err == 0);
-    //assert(frame_cap != seL4_CapNull);
-    //printf("new %p\n", frame_cap);
-    framecaps[vframe] = frame_cap;
-    err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, seL4_AllRights,
-            seL4_ARM_Default_VMAttributes);
-    // seL4_Error err = seL4_ARM_Page_Remap(framecaps[vframe], vspace, seL4_ReadWrite,
-    //         seL4_ARM_Default_VMAttributes | seL4_ARM_ExecuteNever);
-    //printf("err %d\n", err);
-    assert(err == 0);
+    // //printf("remapping %u . %p\n", vframe, framecaps[vframe]);
+    // seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
+    // seL4_Error err = cspace_copy(global_cspace(), frame_cap, global_cspace(),
+    //                 frame_page(vframes[vframe]), seL4_AllRights);
+    // assert(err == 0);
+    // //assert(frame_cap != seL4_CapNull);
+    // //printf("new %p\n", frame_cap);
+    // framecaps[vframe] = frame_cap;
+    // err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, seL4_AllRights,
+    //         seL4_ARM_Default_VMAttributes);
+    // // seL4_Error err = seL4_ARM_Page_Remap(framecaps[vframe], vspace, seL4_ReadWrite,
+    // //         seL4_ARM_Default_VMAttributes | seL4_ARM_ExecuteNever);
+    // //printf("err %d\n", err);
+    // assert(err == 0);
 
     return 1;
 }
@@ -61,136 +75,199 @@ int vft_set_reference(vframe_ref_t vframe, seL4_CPtr vspace, seL4_Word vaddr)
 int find_victim()
 {
     while (1) {
-        if (ptr == CONFIG_SOS_FRAME_LIMIT-1) { ptr = 0; }
+        if (ptr == MAX_PFRAMES) { ptr = 0; }
 
-        vframe_ref_t vframe = frames[ptr].vframe_ref;
-        assert(framecaps[vframe] != 0);
-       // printf("fc %p\n", framecaps[vframe]);
-        if (frames[ptr].reference == 1) {
-            frames[ptr].reference = 0;
-            seL4_ARM_Page_Unmap(framecaps[vframe]);
-            cspace_delete(get_global_cspace(), framecaps[vframe]);
-            cspace_free_slot(get_global_cspace(), framecaps[vframe]);
-            //printf("ptr %d had chance\n", ptr);
+        if (pframes[ptr].reference == 1 && !pframes[ptr].pin) {
+            pframes[ptr].reference = 0;
+            seL4_Error err = cspace_revoke(global_cspace(), frame_page(pframes[ptr].frame_ref));
+            assert(err == 0);
+            ptr++;
         }
-        else {
-            //printf("ptr %d victim\n", ptr);
-            return ptr;
+        else if (!pframes[ptr].pin) {
+            return ptr++;
+        } else {
+            ptr++;
         }
-        ptr++;
     }
 }
 
 void print_frames()
 {
-    for (int i = 0; i < CONFIG_SOS_FRAME_LIMIT-1; i++) {
-        printf("%d: %u, %u\n", i, frames[i].frame_ref, frames[i].vframe_ref);
+    for (int i = 0; i < MAX_PFRAMES; i++) {
+        printf("%d: %u, %u\n", i, pframes[i].frame_ref, pframes[i].vframe_ref);
     }
 }
 
-void vft_page_out(int pl)
+void vft_page_out(int v)
 {
-    frame_ref_t fr = frames[pl].frame_ref;
-    unsigned long pos = frames[pl].vframe_ref;
+    frame_ref_t fr = pframes[v].frame_ref;
+    unsigned long pos = pframes[v].vframe_ref;
 
-    seL4_CPtr local = cspace_alloc_slot(get_global_cspace());
-    seL4_Error err = cspace_copy(get_global_cspace(), local, get_global_cspace(), frame_page(fr), seL4_AllRights);
+    seL4_CPtr local = cspace_alloc_slot(global_cspace());
+    assert(local != seL4_CapNull);
+    seL4_Error err = cspace_copy(global_cspace(), local, global_cspace(), frame_page(fr), seL4_AllRights);
     assert(err == 0);
-    err = map_frame(get_global_cspace(), local, seL4_CapInitThreadVSpace,
+    err = map_frame(global_cspace(), local, seL4_CapInitThreadVSpace,
                     TMP, seL4_AllRights, seL4_ARM_Default_VMAttributes);
     assert(err == 0);
-    //printf("3\n");
-    pagefile_write(TMP, pos);
-    //printf("4\n");
-        
-    seL4_ARM_Page_Unmap(local);
-    cspace_delete(get_global_cspace(), local);
-    cspace_free_slot(get_global_cspace(), local);
 
-    //memset(frame_data(fr), 0, 1<<12);
+    pagefile_write(TMP, pos);
+    
+    memset(TMP, 0, 1<<12);
+    seL4_ARM_Page_Unmap(local);
+    cspace_delete(global_cspace(), local);
+    cspace_free_slot(global_cspace(), local);
+
+    err = cspace_revoke(global_cspace(), frame_page(fr));
+    assert(err == 0);
+    //printf("paging out %p\n", vframes[pframes[v].vframe_ref].vaddr);
+    //pframes[v].reference = 1;
     //printf("paged out frame %d(%u) to %d\n", pos, fr, pos);
 }
 
-void vft_page_in(int pl, vframe_ref_t vframe)
+void vft_page_in(int v, vframe_ref_t vframe)
 {
-    frame_ref_t fr = frames[pl].frame_ref;
+    frame_ref_t fr = pframes[v].frame_ref;
+    unsigned long pos = vframe;
 
-    seL4_CPtr local = cspace_alloc_slot(get_global_cspace());
-    seL4_Error err = cspace_copy(get_global_cspace(), local, get_global_cspace(), frame_page(fr), seL4_AllRights);
+    seL4_CPtr local = cspace_alloc_slot(global_cspace());
+    assert(local != seL4_CapNull);
+    seL4_Error err = cspace_copy(global_cspace(), local, global_cspace(), frame_page(fr), seL4_AllRights);
     assert(err == 0);
-    err = map_frame(get_global_cspace(), local, seL4_CapInitThreadVSpace,
+    err = map_frame(global_cspace(), local, seL4_CapInitThreadVSpace,
                     TMP, seL4_AllRights, seL4_ARM_Default_VMAttributes);
     assert(err == 0);
     //printf("3\n");
     //printf("vframe is %u\n", vframe);
-    pagefile_read(TMP, vframe);
+    pagefile_read(TMP, pos);
     //printf("reading finished\n");
     //printf(":%s\n", 0x6000000002b0);
 
     seL4_ARM_Page_Unmap(local);
-    cspace_delete(get_global_cspace(), local);
-    cspace_free_slot(get_global_cspace(), local);
+    cspace_delete(global_cspace(), local);
+    cspace_free_slot(global_cspace(), local);
 
-    frames[pl].vframe_ref = vframe;
-    vframes[vframe] = fr;
+    vframe_ent_t e = vframes[vframe];
+    err = cspace_copy(global_cspace(), e.frame_cap, global_cspace(), frame_page(fr), seL4_AllRights);
+    assert(err == 0);
+    err = seL4_ARM_Page_Map(e.frame_cap, e.vspace, e.vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    //printf("paging in %p\n", vframes[vframe].vaddr);
 }
 
 frame_ref_t frame_ref_from_v(vframe_ref_t vframe)
 {
+    //printf("frame from v called\n");
     if (CONFIG_SOS_FRAME_LIMIT == 0ul) { return (frame_ref_t)vframe; }
 
-    for (int i = 0; i < CONFIG_SOS_FRAME_LIMIT-1; i++) {
-        if (frames[i].vframe_ref == vframe) {
-            return frames[i].frame_ref;
+    for (int i = 0; i < MAX_PFRAMES; i++) {
+        pframe_ent_t pe = pframes[i];
+        if (pe.vframe_ref == vframe) {
+            if (pe.reference == 0) {
+                //printf("vframe %u was 0", vframe);
+                vframe_ent_t e = vframes[vframe];
+                seL4_Error err = cspace_copy(global_cspace(), e.frame_cap, global_cspace(), frame_page(pe.frame_ref), seL4_AllRights);
+                assert(err == 0);
+                //printf(", cap %p\n", e.frame_cap);
+                err = seL4_ARM_Page_Map(e.frame_cap, e.vspace, e.vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+                assert(err == 0);
+                pframes[i].reference = 1;
+            }
+            return pframes[i].frame_ref;
         }
     }
-//printf("vframe %u not found\n", vframe);
-    vft_page_out(0);
+    //printf("vframe %u not found\n", vframe);
+    int v = find_victim();
+    vft_page_out(v);
 
-    vft_page_in(0, vframe);
+    vft_page_in(v, vframe);
+    pframes[v].vframe_ref = vframe;
+    pframes[v].reference = 1;
 
-//printf("giving %u\n", frames[0].frame_ref);
-    return frames[0].frame_ref;
+    vframes[vframe].frame_ref = pframes[v].frame_ref;
+
+    //printf("giving %u\n",pframes[v].frame_ref );
+    return pframes[v].frame_ref;
 }
 
 vframe_ref_t valloc_frame()
 {
-    if (idt == NULL) { idt = id_table_init(0, 1, MAX_FRAMES); }
+    if (idt == NULL) { idt = id_table_init(1, 1, MAX_VFRAMES); }
 
     if (CONFIG_SOS_FRAME_LIMIT == 0ul) {
         return (vframe_ref_t)alloc_frame();
-    } else if (used < CONFIG_SOS_FRAME_LIMIT-1) {
+    } else if (used < MAX_PFRAMES) {
 
         //printf("allocating frame at index %u\n", used);
         frame_ref_t nf = alloc_frame();
 
         int i = id_alloc(idt, 1);
-        vframes[i] = nf;
+        vframes[i].frame_ref = nf;
 
-        kn_t k = { nf, frame_page(nf), (vframe_ref_t)i, 1 };
-        frames[used] = k;
+        pframe_ent_t e = { nf, (vframe_ref_t)i, 1, 0 };
+        pframes[used] = e;
 
         used++;
+        
+        // if (used == MAX_PFRAMES) {
+        //     for (int i = 0; i < MAX_PFRAMES; i++) {
+        //         printf("%u, %u\n", pframes[i].frame_ref, pframes[i].vframe_ref);
+                
+        //     }
+        // }
         return i;
-
     } else {
         int v = find_victim();
         //printf("paging out one frame\n");
         vft_page_out(v);
 
         int i = id_alloc(idt, 1);
-        vframes[i] = frames[v].frame_ref;
-        frames[v].vframe_ref = i;
+        vframes[i].frame_ref = pframes[v].frame_ref;
+
+        pframes[v].vframe_ref = i;
+        pframes[v].reference = 1;
         return i;
     }
 }
 
-void vframe_add_cap(vframe_ref_t vframe, seL4_Word frame_cap)
+void vframe_add_cap(vframe_ref_t vframe, seL4_CPtr frame_cap, seL4_Word vaddr, seL4_CPtr vspace)
 {
-    framecaps[vframe] = frame_cap;
+    vframes[vframe].frame_cap = frame_cap;
+    vframes[vframe].vaddr = vaddr;
+    vframes[vframe].vspace = vspace;
 }
 
 void print_limit()
 {
     //printf("limit %d\n", CONFIG_SOS_FRAME_LIMIT);
+}
+
+vframe_ref_t vframe_dup(vframe_ref_t vframe)
+{
+    vframe_ent_t origin = vframes[vframe];
+
+    int i = id_alloc(idt, 1);
+    vframes[i].frame_ref = origin.frame_ref;
+
+    return i;
+}
+
+void vft_pin_frame(frame_ref_t frame_num)
+{
+    if (CONFIG_SOS_FRAME_LIMIT == 0ul) {
+        return;
+    }
+    int i = 0;
+    while (pframes[i].frame_ref != frame_num) { i++; }
+    pframes[i].pin = 1;
+}
+
+void vft_unpin_frame(frame_ref_t frame_num)
+{
+    if (CONFIG_SOS_FRAME_LIMIT == 0ul) {
+        return;
+    }
+
+    int i = 0;
+    while (pframes[i].frame_ref != frame_num) { i++; }
+    pframes[i].pin = 0;
 }

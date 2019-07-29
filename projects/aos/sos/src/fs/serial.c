@@ -8,11 +8,15 @@ static struct serial *sHandle = NULL;
 static char *read_vaddr;
 static size_t offset;
 
-int serial_open(fd_table_t *table, fmode_t mode)
+int serial_open(fmode_t mode)
 {
-    if (sHandle == NULL) { sHandle = serial_init(); }
-    vnode_t *vnode = vnode_init(0, serial_read, serial_write);
-    return fdt_insert(table, "console", 0, vnode, mode);
+    if (sHandle == NULL) {
+        sHandle = serial_init();
+        if (sHandle == NULL) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int serial_write(struct nfsfh *fh, char *msg, size_t offset, size_t len)

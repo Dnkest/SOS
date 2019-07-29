@@ -146,20 +146,21 @@ seL4_Error addrspace_map_one_page(addrspace_t *target_addrspace, cspace_t *targe
                                     addrspace_t *source_addrspace, cspace_t *source_cspace,
                                     seL4_Word source_vaddr)
 {
-    //printf("\nmapping %p to %p\n", source_vaddr, target_vaddr);
+    printf("\nmapping %p to %p\n", source_vaddr, target_vaddr);
     vframe_ref_t vframe = addrspace_lookup_vframe(source_addrspace, source_vaddr);
+    vframe_ref_t dup = vframe_dup(vframe);
     frame_ref_t frame = frame_ref_from_v(vframe);
     //printf("frame fetched is %u\n", frame);
 
     seL4_Error err = addrspace_map_impl(target_addrspace, target_cspace, target, 
-                                vspace, target_vaddr, frame,
-                                source_cspace, frame_page(frame));
+                                vspace, target_vaddr, dup,
+                                frame_table_cspace(), frame_page(frame));
     if (err) {
         cspace_delete(target_cspace, target);
         cspace_free_slot(target_cspace, target);
     }
-    vframe_add_cap(vframe, target);
-    //printf("map done\n\n");
+    vframe_add_cap(dup, target, target_vaddr, vspace);
+    printf("map done\n\n");
     return err;
 }
 
@@ -174,11 +175,11 @@ seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace
                                 vspace, vaddr, vframe,
                                 frame_table_cspace(), frame_page(frame));
     if (err) {
-        free_frame(frame);
+        //free_frame(frame);
         cspace_delete(cspace, frame_cap);
         cspace_free_slot(cspace, frame_cap);
     }
-    vframe_add_cap(vframe, frame_cap);
+    vframe_add_cap(vframe, frame_cap, vaddr, vspace);
     return err;
 }
 
@@ -250,4 +251,9 @@ int addrspace_set_reference(addrspace_t *addrspace, seL4_CPtr vspace, seL4_Word 
 {
     vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, vaddr);
     return vft_set_reference(vframe, vspace, vaddr);
+}
+
+void addrspace_remap()
+{
+
 }

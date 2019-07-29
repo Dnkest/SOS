@@ -24,7 +24,7 @@ int sos_sys_open(const char *path, fmode_t mode)
     seL4_SetMR(1, path);
     seL4_SetMR(2, mode);
     seL4_SetMR(3, strlen(path));
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
     seL4_Call(SOS_IPC_EP_CAP, tag);
 
     return seL4_GetMR(0);
@@ -80,8 +80,9 @@ int sos_stat(const char *path, sos_stat_t *buf)
 {
     seL4_SetMR(0, SOS_SYSCALL_STAT);
     seL4_SetMR(1, path);
-    seL4_SetMR(2, buf);
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_SetMR(2, strlen(path));
+    seL4_SetMR(3, buf);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
     seL4_Call(SOS_IPC_EP_CAP, tag);
 
     return seL4_GetMR(0);

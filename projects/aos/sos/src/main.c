@@ -38,10 +38,13 @@
 #include "tests.h"
 #include "syscall.h"
 #include "addrspace.h"
-#include "process.h"
+//#include "process.h"
 #include "utils/kmalloc.h"
 #include "utils/idalloc.h"
-#include "paging.h"
+#include "pagefile.h"
+#include "globals.h"
+#include "proc.h"
+#include "utils/eventq.h"
 
 #include <aos/vsyscall.h>
 
@@ -114,40 +117,9 @@ static ut_t *alloc_retype(seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
     return ut;
 }
 
-void *proc_init(void *p)
-{
-            /* Start the user application */
-            printf("Start first process\n");
-            process_t *proc = process_create(&cspace, _cpio_archive, _cpio_archive_end);
-            process_start(proc, TTY_NAME, global_addrspace, (seL4_CPtr)p);
-            set_cur_proc(proc);
-            ZF_LOGF_IF(!proc, "Failed to start first process");
-            proc_ready = 1;
-}
-
-void *handle_vm_fault(void *p)
-{
-    sos_handle_page_fault(cur_proc(), seL4_GetMR(seL4_VMFault_Addr));
-    no_vm_fault = 1;
-}
-
 NORETURN void syscall_loop(seL4_CPtr ep)
 {
-    c = coroutine(pagefile_init, BIT(14));
-    proc_c = coroutine(proc_init, BIT(14));
     while (1) {
-        if (resumable(c) && !pagefile_ready()) {
-            resume(c, NULL);
-
-        } else if (pagefile_ready() && resumable(proc_c) && !proc_ready) {
-    
-            resume(proc_c, (void *)ep);
-        } else if (proc_ready && vm_c != NULL && resumable(vm_c) && !no_vm_fault) {
-            resume(vm_c, NULL);
-        }
-
-        if (proc_ready) { do_jobs(); }
-
         seL4_Word badge = 0;
         /* Block on ep, waiting for an IPC sent over ep, or
          * a notification from our bound notification object */
@@ -155,29 +127,52 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         /* Awake! We got a message - check the label and badge to
          * see what the message is about */
         seL4_Word label = seL4_MessageInfo_get_label(message);
+        //printf("badge %u\n", badge);
+
+        proc_t *proc = process_get_by_badge(badge);
+        if (proc != NULL) {
+            seL4_CPtr reply = cspace_alloc_slot(global_cspace());
+            seL4_Error err = cspace_save_reply_cap(global_cspace(), reply);
+            ZF_LOGF_IFERR(err, "Failed to save reply");
+            process_set_reply_cap(proc, reply);
+        }
 
         if (badge & IRQ_EP_BADGE) {
+            //printf("(1) irq badge %u\n", badge);
+
             /* It's a notification from our bound notification
              * object! */
             sos_handle_irq_notification(&badge);
-        } else if (no_vm_fault && proc_ready && label == seL4_Fault_NullFault) {
+
+        } else if (proc != NULL && label == seL4_Fault_NullFault) {
+            printf("(2) badge %u\n", badge);
+
             /* It's not a fault or an interrupt, it must be an IPC
-             * message from tty_test! */
-            //handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1);
-            sos_handle_syscall(cur_proc());
-        } else if (proc_ready && label == seL4_Fault_VMFault) {
-            no_vm_fault = 0;
-            vm_c = coroutine(handle_vm_fault, BIT(14));
-            resume(vm_c, NULL);
+             * message from app! */
+            process_set_data0(proc, seL4_GetMR(0));
+            process_set_data1(proc, seL4_GetMR(1));
+            process_set_data2(proc, seL4_GetMR(2));
+            process_set_data3(proc, seL4_GetMR(3));
+            eventQ_produce(sos_handle_syscall, (void *)proc);
+
+        } else if (proc != NULL && label == seL4_Fault_VMFault) {
+            printf("(3) badge %u\n", badge);
+
+            process_set_data0(proc, seL4_GetMR(seL4_VMFault_Addr));
+            eventQ_produce(sos_handle_vm_fault, (void *)proc);
+
         } else {
-            printf("here\n");
+
             /* some kind of fault */
-            debug_print_fault(message, TTY_NAME);
+            debug_print_fault(message, process_get_name(proc));
             /* dump registers too */
-            debug_dump_registers(cur_proc()->tcb);
+            debug_dump_registers(process_get_tcb(proc));
 
             ZF_LOGF("The SOS skeleton does not know how to handle faults!");
         }
+
+        //printf("consuming\n");
+        eventQ_consume();
     }
 }
 
@@ -205,6 +200,8 @@ seL4_CPtr get_seL4_CapInitThreadTCB(void)
 {
     return seL4_CapInitThreadTCB;
 }
+
+
 
 /* tell muslc about our "syscalls", which will bve called by muslc on invocations to the c library */
 void init_muslc(void)
@@ -244,6 +241,12 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
 
+void *proc_init(void *p)
+{
+    printf("Start sosh process\n");
+    process_init("sosh", (seL4_CPtr)p);
+}
+
 NORETURN void *main_continued(UNUSED void *arg)
 {
     /* Initialise other system compenents here */
@@ -271,14 +274,18 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     /* Initialises the timer */
     printf("Timer init\n");
-    start_timer(timer_vaddr);
+    //start_timer(timer_vaddr);
     /* You will need to register an IRQ handler for the timer here.
      * See "irq.h". */
 
-    syscall_handler_init(&cspace, seL4_CapInitThreadVSpace, global_addrspace);
+    syscall_handlers_init();
 
     //kmalloc_tests();
     //id_alloc_tests();
+
+    eventQ_init();
+    eventQ_produce(pagefile_init, NULL);
+    eventQ_produce(proc_init, (void *)ipc_ep);
 
     printf("\nSOS entering syscall loop\n");
     syscall_loop(ipc_ep);
@@ -322,10 +329,10 @@ int main(void)
 
     /* test print */
     printf("SOS Started!\n");
+    set_global_cspace(&cspace);
+    set_global_vspace(seL4_CapInitThreadVSpace);
 
     frame_table_init(&cspace, seL4_CapInitThreadVSpace);
-
-    global_addrspace = addrspace_create();
 
     /* allocate a bigger stack and switch to it -- we'll also have a guard page, which makes it much
      * easier to detect stack overruns */

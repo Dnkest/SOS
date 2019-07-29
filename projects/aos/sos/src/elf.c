@@ -22,6 +22,7 @@
 #include "ut.h"
 #include "mapping.h"
 #include "elfload.h"
+#include "fs/sos_nfs.h"
 
 /*
  * Convert ELF permissions into seL4 permissions.
@@ -73,13 +74,17 @@ static inline seL4_CapRights_t get_sel4_rights_from_elf(unsigned long permission
  *
  */
 static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr loadee, char *src, size_t segment_size,
-                                    size_t file_size, uintptr_t dst, seL4_CapRights_t permissions)
+                                    size_t file_size, uintptr_t dst, seL4_CapRights_t permissions, char *app_name)
 {
     assert(file_size <= segment_size);
 
     /* We work a page at a time in the destination vspace. */
     unsigned int pos = 0;
     seL4_Error err = seL4_NoError;
+
+    struct nfsfh *fh;
+    assert(sos_nfs_open(&fh, app_name, 0) == 0);
+
     while (pos < segment_size) {
         uintptr_t loadee_vaddr = (ROUND_DOWN(dst, PAGE_SIZE_4K));
         /* create slot for the frame to load the data into */
@@ -90,8 +95,10 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         }
 
         /* map the frame into the loadee address space */
+//printf("2\n");
         err = addrspace_alloc_map_one_page(addrspace, cspace, loadee_frame,
                                     loadee, loadee_vaddr);
+                                    //printf("2\n");
 
         /* A frame has already been mapped at this address. This occurs when segments overlap in
          * the same frame, which is permitted by the standard. That's fine as we
@@ -112,9 +119,10 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         /* finally copy the data */
         vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, loadee_vaddr);
         //frame_ref_t frame = addrspace_fetch_frame(addrspace, loadee_vaddr);
-        //printf("%p->%u\n", loadee_vaddr, vframe);
+        //printf("%p->%u file %u\n", loadee_vaddr, vframe, src);
+        //printf("1\n");
         frame_ref_t frame = frame_ref_from_v(vframe);
-
+//printf("1\n");
         unsigned char *loader_data = frame_data(frame);
 //printf("cop frame %p\n", frame_data(frame));
         /* Write any zeroes at the start of the block. */
@@ -124,12 +132,15 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         //int *p = 0x8200002000;
   //printf("t %d\n", *p);      
 //printf("loader_data %p\n", loader_data);
+
         /* Copy the data from the source. */
         size_t segment_bytes = PAGE_SIZE_4K - leading_zeroes;
         size_t file_bytes = MIN(segment_bytes, file_size - pos);
         if (pos < file_size) {
-            memcpy(loader_data, src, file_bytes);
+            sos_nfs_read(fh, loader_data, src, file_bytes);
+            //memcpy(loader_data, src, file_bytes);
         } else {
+            //printf("zero filled\n");
             memset(loader_data, 0, file_bytes);
         }
         loader_data += file_bytes;
@@ -153,13 +164,16 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         src += segment_bytes;
 //printf("3\n");
     }
+
+    assert(sos_nfs_close(fh) == 0);
     return 0;
 }
 
-int elf_load(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file)
+int elf_load(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, char *app_name)
 {
 
     int num_headers = elf_getNumProgramHeaders(elf_file);
+    //printf("num %d\n", num_headers);
     for (int i = 0; i < num_headers; i++) {
 
         /* Skip non-loadable segments (such as debugging data). */
@@ -168,16 +182,17 @@ int elf_load(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr loadee_vspace, 
         }
 
         /* Fetch information about this segment. */
-        char *source_addr = elf_file->elfFile + elf_getProgramHeaderOffset(elf_file, i);
+        char *source_addr = elf_getProgramHeaderOffset(elf_file, i);
         size_t file_size = elf_getProgramHeaderFileSize(elf_file, i);
         size_t segment_size = elf_getProgramHeaderMemorySize(elf_file, i);
         uintptr_t vaddr = elf_getProgramHeaderVaddr(elf_file, i);
         seL4_Word flags = elf_getProgramHeaderFlags(elf_file, i);
 
         /* Copy it across into the vspace. */
-        printf(" * Loading segment %p-->%p (%p)\n", (void *) vaddr, (void *)(vaddr + segment_size), vaddr);
+        ZF_LOGD(" * Loading segment %p-->%p\n", (void *) vaddr, (void *)(vaddr + segment_size));
+        //printf("%p, %u, %u, %p, %p\n", source_addr, file_size, segment_size, vaddr, flags);
         int err = load_segment_into_vspace(addrspace, cspace, loadee_vspace, source_addr, segment_size, file_size, vaddr,
-                                           get_sel4_rights_from_elf(flags));
+                                           get_sel4_rights_from_elf(flags), app_name);
         if (err) {
             ZF_LOGE("Elf loading failed!");
             return -1;
