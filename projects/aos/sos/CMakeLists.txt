@@ -51,7 +51,6 @@ add_executable(
     src/mapping.c
     src/network.c
     src/ut.c
-    src/vft.c
     src/tests.c
     src/sys/backtrace.c
     src/sys/exit.c
@@ -76,7 +75,8 @@ add_executable(
     src/utils/pq.c
     src/utils/q.c
     src/utils/circular_id.c
-    src/pagefile.c
+    src/paging.c
+    src/vframe_table.c
     src/globals.c
     src/proc.c
     src/uio.c

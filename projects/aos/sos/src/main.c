@@ -39,7 +39,7 @@
 #include "syscall.h"
 #include "addrspace.h"
 #include "utils/kmalloc.h"
-#include "pagefile.h"
+#include "paging.h"
 #include "globals.h"
 #include "proc.h"
 #include "utils/eventq.h"
@@ -116,7 +116,8 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         //printf("badge %u\n", badge);
 
         proc_t *proc = process_get_by_badge(badge);
-        if (proc != NULL) {
+        if (proc != NULL && proc > SOS_KMALLOC) {
+            //printf("proc %p\n", proc);
             seL4_CPtr reply = cspace_alloc_slot(global_cspace());
             seL4_Error err = cspace_save_reply_cap(global_cspace(), reply);
             ZF_LOGF_IFERR(err, "Failed to save reply");
@@ -131,7 +132,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             sos_handle_irq_notification(&badge);
 
         } else if (proc != NULL && label == seL4_Fault_NullFault) {
-            printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
+            //printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
 
             /* It's not a fault or an interrupt, it must be an IPC
              * message from app! */
@@ -187,8 +188,6 @@ seL4_CPtr get_seL4_CapInitThreadTCB(void)
     return seL4_CapInitThreadTCB;
 }
 
-
-
 /* tell muslc about our "syscalls", which will bve called by muslc on invocations to the c library */
 void init_muslc(void)
 {
@@ -229,6 +228,7 @@ void init_muslc(void)
 
 void *start_proc_init(void *p)
 {
+    while (!paging_ready()) { yield(0); }
     printf("Start first process\n");
     process_init("sosh", (seL4_CPtr)p);
 }
@@ -272,7 +272,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     //id_alloc_tests();
 
     eventQ_init();
-    eventQ_produce(pagefile_init, NULL);
+    eventQ_produce(paging_init, NULL);
     eventQ_produce(start_proc_init, (void *)ipc_ep);
 
     printf("\nSOS entering syscall loop\n");

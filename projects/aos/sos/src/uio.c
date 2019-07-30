@@ -7,6 +7,7 @@
 #include "utils/circular_id.h"
 #include "vmem_layout.h"
 #include "globals.h"
+#include "vframe_table.h"
 
 static circular_id_t *mapping_addr_table;
 
@@ -51,7 +52,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
 
-        printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
+        //printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(global_cspace());
 
         if (kernel_frame_cap == seL4_CapNull) {
@@ -59,6 +60,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
             return 0;
         }
         vframe_ref_t vframe = addrspace_lookup_vframe(process_addrspace(proc), user_vaddr_tmp);
+//printf("vfr %u\n", vframe);
         if (vframe == NULL_FRAME) {
             seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
             if (frame_cap == seL4_CapNull) {
@@ -73,9 +75,9 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
             }
             vframe = addrspace_lookup_vframe(process_addrspace(proc), user_vaddr_tmp);
         }
-        frame_ref_t fr = frame_ref_from_v(vframe);
-
-        vft_pin_frame(fr);    
+        frame_ref_t fr = frame_from_vframe(vframe);
+        
+        vframe_pin(fr);    
         uio->frame_refs[i] = fr;
         seL4_Error err = cspace_copy(global_cspace(), kernel_frame_cap, global_cspace(),
                             frame_page(fr), seL4_AllRights);
@@ -116,7 +118,7 @@ void uio_unmap(uio_t *uio)
         /* mark the slot as free */
         cspace_free_slot(global_cspace(), frame_cap);
 
-        vft_unpin_frame(uio->frame_refs[i]);
+        vframe_unpin(uio->frame_refs[i]);
     }
 
     kfree(uio->frame_caps);

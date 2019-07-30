@@ -23,6 +23,7 @@
 #include "mapping.h"
 #include "elfload.h"
 #include "fs/sos_nfs.h"
+#include "vframe_table.h"
 
 /*
  * Convert ELF permissions into seL4 permissions.
@@ -121,7 +122,7 @@ static int load_segment_into_vspace(addrspace_t *addrspace, cspace_t *cspace, se
         //frame_ref_t frame = addrspace_fetch_frame(addrspace, loadee_vaddr);
         //printf("%p->%u file %u\n", loadee_vaddr, vframe, src);
         //printf("1\n");
-        frame_ref_t frame = frame_ref_from_v(vframe);
+        frame_ref_t frame = frame_from_vframe(vframe);
 //printf("1\n");
         unsigned char *loader_data = frame_data(frame);
 //printf("cop frame %p\n", frame_data(frame));

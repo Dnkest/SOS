@@ -2,6 +2,7 @@
 #include <utils/page.h>
 #include <sel4/sel4_arch/mapping.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "addrspace.h"
 #include "frame_table.h"
@@ -9,7 +10,7 @@
 #include "pagetable.h"
 #include "elf.h"
 #include "utils/kmalloc.h"
-#include "vft.h"
+#include "vframe_table.h"
 
 #define CAPACITY (PAGE_SIZE_4K-sizeof(struct cap_list *)-sizeof(int))/sizeof(seL4_CPtr)
 #define PAGE_MASK 0xFFFFFFFFF000
@@ -89,12 +90,12 @@ bool addrspace_check_valid_region(addrspace_t *addrspace, seL4_Word fault_addres
 
 vframe_ref_t addrspace_lookup_vframe(addrspace_t *addrspace, seL4_Word vaddr)
 {
-    return pagetable_lookup_vframe(addrspace->table, vaddr);
+    return pagetable_lookup(addrspace->table, vaddr);
 }
 
-seL4_Word addrspace_lookup_frame_cap(addrspace_t *addrspace, seL4_Word vaddr)
+int addrspace_vaddr_exists(addrspace_t *addrspace, seL4_Word vaddr)
 {
-    return pagetable_lookup_frame_cap(addrspace->table, vaddr);
+    return (pagetable_lookup(addrspace->table, vaddr) != 0);
 }
 
 seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, seL4_CPtr target, 
@@ -125,7 +126,7 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
         printf("err%d\n", err);
         ZF_LOGE("Failed to copy cap");
     } else {
-        pagetable_put(addrspace->table, vaddr, vframe, target);
+        pagetable_put(addrspace->table, vaddr, vframe);
     }
     for (size_t i = 0; i < MAPPING_SLOTS; i++) {
         if (used & BIT(i)) {
@@ -141,34 +142,34 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
     return err;
 }
 
-seL4_Error addrspace_map_one_page(addrspace_t *target_addrspace, cspace_t *target_cspace,
-                                    seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
-                                    addrspace_t *source_addrspace, cspace_t *source_cspace,
-                                    seL4_Word source_vaddr)
-{
-    printf("\nmapping %p to %p\n", source_vaddr, target_vaddr);
-    vframe_ref_t vframe = addrspace_lookup_vframe(source_addrspace, source_vaddr);
-    vframe_ref_t dup = vframe_dup(vframe);
-    frame_ref_t frame = frame_ref_from_v(vframe);
-    //printf("frame fetched is %u\n", frame);
+// seL4_Error addrspace_map_one_page(addrspace_t *target_addrspace, cspace_t *target_cspace,
+//                                     seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
+//                                     addrspace_t *source_addrspace, cspace_t *source_cspace,
+//                                     seL4_Word source_vaddr)
+// {
+//     printf("\nmapping %p to %p\n", source_vaddr, target_vaddr);
+//     vframe_ref_t vframe = addrspace_lookup_vframe(source_addrspace, source_vaddr);
+//     vframe_ref_t dup = vframe_dup(vframe);
+//     frame_ref_t frame = frame_ref_from_v(vframe);
+//     //printf("frame fetched is %u\n", frame);
 
-    seL4_Error err = addrspace_map_impl(target_addrspace, target_cspace, target, 
-                                vspace, target_vaddr, dup,
-                                frame_table_cspace(), frame_page(frame));
-    if (err) {
-        cspace_delete(target_cspace, target);
-        cspace_free_slot(target_cspace, target);
-    }
-    vframe_add_cap(dup, target, target_vaddr, vspace);
-    printf("map done\n\n");
-    return err;
-}
+//     seL4_Error err = addrspace_map_impl(target_addrspace, target_cspace, target, 
+//                                 vspace, target_vaddr, dup,
+//                                 frame_table_cspace(), frame_page(frame));
+//     if (err) {
+//         cspace_delete(target_cspace, target);
+//         cspace_free_slot(target_cspace, target);
+//     }
+//     vframe_add_cap(dup, target, target_vaddr, vspace);
+//     printf("map done\n\n");
+//     return err;
+// }
 
 seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr frame_cap,
                                     seL4_CPtr vspace, seL4_Word vaddr)
 {
-    vframe_ref_t vframe = valloc_frame();
-    frame_ref_t frame = frame_ref_from_v(vframe);
+    vframe_ref_t vframe = alloc_vframe(frame_cap, vaddr, vspace);
+    frame_ref_t frame = frame_from_vframe(vframe);
     //printf("hah %p %p\n", vaddr, frame_cap);
 
     seL4_Error err = addrspace_map_impl(addrspace, cspace, frame_cap, 
@@ -179,15 +180,15 @@ seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace
         cspace_delete(cspace, frame_cap);
         cspace_free_slot(cspace, frame_cap);
     }
-    vframe_add_cap(vframe, frame_cap, vaddr, vspace);
+    //vframe_add_cap(vframe, frame_cap, vaddr, vspace);
     return err;
 }
 
-frame_ref_t addrspace_fetch_frame(addrspace_t *addrspace, seL4_Word vaddr)
-{
-    vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, vaddr);
-    return frame_ref_from_v(vframe);
-}
+// frame_ref_t addrspace_fetch_frame(addrspace_t *addrspace, seL4_Word vaddr)
+// {
+//     vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, vaddr);
+//     return frame_ref_from_v(vframe);
+// }
 
 cap_list_t *cap_list_create()
 {

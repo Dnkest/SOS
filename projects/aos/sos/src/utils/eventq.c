@@ -61,6 +61,7 @@ void eventQ_consume()
             q_push(eventQ, (void *)front);
             q_pop(eventQ);
         } else {
+            //printf("finished\n");
             eventQ_pop();
         }
     }

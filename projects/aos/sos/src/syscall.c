@@ -8,6 +8,7 @@
 #include "fs/vfs.h"
 #include "globals.h"
 #include "uio.h"
+#include "vframe_table.h"
 
 #define MASK 0xfffffffff000
 
@@ -159,14 +160,12 @@ void *sos_handle_vm_fault(void *data)
 {
     proc_t *proc = (proc_t *)data;
     seL4_Word fault_address = process_get_data0(proc);
-    //printf("faultaddress-> %p\n", fault_address);
 
     seL4_Word vaddr = fault_address & MASK;
     addrspace_t *addrspace = process_addrspace(proc);
-    if (fault_address && addrspace_check_valid_region(addrspace, fault_address)) {
+    if (fault_address && addrspace_check_valid_region(addrspace, vaddr)) {
+        if (!addrspace_vaddr_exists(addrspace, vaddr)) {
 
-        vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, fault_address);
-        if (vframe == 0) {
             seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
             if (frame_cap == seL4_CapNull) {
                 free_frame(frame_cap);
@@ -178,13 +177,12 @@ void *sos_handle_vm_fault(void *data)
             if (err) {
                 ZF_LOGE("Failed to copy cap");
             }
-            vframe = addrspace_lookup_vframe(addrspace, fault_address);
+            
         }
-        assert(vframe != 0);
-        frame_ref_from_v(vframe);
+        vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, vaddr);
+        frame_from_vframe(vframe);
         process_reply(proc, 0);
     } else {
         printf("process %d vm fault %p\n", process_id(proc), fault_address);
     }
-    //ZF_LOGF("vm fault on address %p", fault_address);
 }
