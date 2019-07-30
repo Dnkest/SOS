@@ -90,27 +90,43 @@ int sos_stat(const char *path, sos_stat_t *buf)
 
 pid_t sos_process_create(const char *path)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_PROC_CREATE);
+    seL4_SetMR(1, path);
+    seL4_SetMR(2, strlen(path));
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 int sos_process_delete(pid_t pid)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_PROC_DELETE);
+    seL4_SetMR(1, pid);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 pid_t sos_my_id(void)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_MY_ID);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
 
+    return seL4_GetMR(0);
 }
 
 int sos_process_status(sos_process_t *processes, unsigned max)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_SetMR(0, SOS_SYSCALL_PROC_STATUS);
+    seL4_SetMR(1, processes);
+    seL4_SetMR(2, max);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 pid_t sos_process_wait(pid_t pid)

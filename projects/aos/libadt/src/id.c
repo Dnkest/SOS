@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
-id_table_t *id_table_init(unsigned int first)
+low_avail_id_t *id_table_init(unsigned int first)
 {
-    id_table_t *table = malloc(sizeof(struct id_table));
+    low_avail_id_t *table = malloc(sizeof(struct id_table));
     table->next = 0;
     for (int i = 0; i< 4092; i++) {
         table->array[i] = 0;
@@ -12,7 +12,7 @@ id_table_t *id_table_init(unsigned int first)
     return table;
 }
 
-unsigned int id_next(id_table_t *table)
+unsigned int id_next(low_avail_id_t *table)
 {
 
     unsigned int ret = table->next;
@@ -25,7 +25,7 @@ unsigned int id_next(id_table_t *table)
     return ret;
 }
 
-unsigned int id_next_start_at(id_table_t *table, unsigned int index)
+unsigned int id_next_start_at(low_avail_id_t *table, unsigned int index)
 {
     unsigned int tmp = table->next;
     table->next = index;
@@ -34,7 +34,7 @@ unsigned int id_next_start_at(id_table_t *table, unsigned int index)
     return ret;
 }
 
-unsigned int id_find_n(id_table_t *table, int n)
+unsigned int id_find_n(low_avail_id_t *table, int n)
 {
     int ret = table->next;
     int tmp = ret;
@@ -53,7 +53,7 @@ unsigned int id_find_n(id_table_t *table, int n)
     }
 }
 
-void id_free(id_table_t *table, unsigned int id)
+void low_avail_id_free(low_avail_id_t *table, unsigned int id)
 {
     table->array[id] = 0;
     int tmp = 0;
@@ -63,9 +63,9 @@ void id_free(id_table_t *table, unsigned int id)
     table->next = (unsigned int)tmp;
 }
 
-void id_tests(id_table_t *table)
+void id_tests(low_avail_id_t *table)
 {
-    id_table_t *table1 = id_table_init(0);
+    low_avail_id_t *table1 = id_table_init(0);
 
     unsigned int t1 = id_next(table1);
     assert(t1 == 0);
@@ -73,7 +73,7 @@ void id_tests(id_table_t *table)
     assert(t2 == 1);
     unsigned int t3 = id_next(table1);
     assert(t3 == 2);
-    id_free(table1, 0);
+    low_avail_id_free(table1, 0);
     unsigned int t4 = id_next(table1);
     assert(t4 == 0);
     unsigned int t5 = id_find_n(table1, 3);

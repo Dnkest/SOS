@@ -15,8 +15,9 @@ int serial_open(fmode_t mode)
         if (sHandle == NULL) {
             return -1;
         }
+        return 0;
     }
-    return 0;
+    return -1;
 }
 
 int serial_write(struct nfsfh *fh, char *msg, size_t offset, size_t len)

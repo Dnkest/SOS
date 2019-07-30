@@ -4,7 +4,7 @@
 
 #include "vnode.h"
 #include "fs_types.h"
-#include "../utils/idalloc.h"
+#include "../utils/low_avail_id.h"
 
 #define MAX_FD  255
 
@@ -18,7 +18,7 @@ typedef struct fd_entry {
 
 typedef struct fd_table {
     fd_entry_t *entries[MAX_FD];
-    id_table_t *idalloc;
+    low_avail_id_t *idalloc;
 } fd_table_t;
 
 fd_table_t *fdt_init();

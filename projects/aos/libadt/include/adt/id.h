@@ -5,16 +5,16 @@
 typedef struct id_table {
     unsigned char array[CAPACITY];
     unsigned int next;
-} id_table_t;
+} low_avail_id_t;
 
-id_table_t *id_table_init(unsigned int first);
+low_avail_id_t *id_table_init(unsigned int first);
 
-unsigned int id_next(id_table_t *table);
+unsigned int id_next(low_avail_id_t *table);
 
-unsigned int id_next_start_at(id_table_t *table, unsigned int index);
+unsigned int id_next_start_at(low_avail_id_t *table, unsigned int index);
 
-unsigned int id_find_n(id_table_t *table, int n);
+unsigned int id_find_n(low_avail_id_t *table, int n);
 
-void id_free(id_table_t *table, unsigned int id);
+void low_avail_id_free(low_avail_id_t *table, unsigned int id);
 
-void id_tests(id_table_t *table);
+void id_tests(low_avail_id_t *table);

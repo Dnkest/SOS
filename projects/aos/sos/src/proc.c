@@ -13,15 +13,17 @@
 
 #include "fs/sos_nfs.h"
 
-#include "utils/idalloc.h"
+#include "utils/low_avail_id.h"
 #include "utils/kmalloc.h"
 #include "vmem_layout.h"
 #include "elfload.h"
 
 #define MAX_PROCESS 128
+#define BADGE_BASE  100
 
 struct proc {
     char *app_name;
+    int id;
 
     ut_t *tcb_ut;
     seL4_CPtr tcb;
@@ -45,7 +47,7 @@ struct proc {
 };
 
 static proc_t *processes[MAX_PROCESS];
-static id_table_t *pids = NULL;
+static low_avail_id_t *pids = NULL;
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *process_alloc_retype(proc_t *proc, cspace_t *cspace, seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -220,7 +222,7 @@ static seL4_Word process_init_stack(proc_t *proc, const char *app_name, cspace_t
     return stack_top;
 }
 
-bool process_init(char *app_name, seL4_CPtr ep)
+int process_init(char *app_name, seL4_CPtr ep)
 {
     cspace_t *cspace = global_cspace();
 
@@ -230,15 +232,17 @@ bool process_init(char *app_name, seL4_CPtr ep)
     proc->addrspace = addrspace_create();
     proc->fdt = fdt_init();
 
-    if (pids == NULL) { pids = id_table_init(100, 1, MAX_PROCESS); }
-    for (int i = 0; i < MAX_PROCESS; i++) {
-        if (processes[i] != NULL && strcmp(processes[i]->app_name, app_name) == 0) {
-            failed = true;
-            return false;
-        }
-    }
-    int id = id_alloc(pids, 1);
-    processes[id-100] = proc;
+    if (pids == NULL) { pids = id_table_init(0, 1, MAX_PROCESS); }
+    // for (int i = 0; i < MAX_PROCESS; i++) {
+    //     if (processes[i] != NULL && strcmp(processes[i]->app_name, app_name) == 0) {
+    //         failed = true;
+    //         return false;
+    //     }
+    // }
+    int id = low_avail_id_alloc(pids, 1);
+    printf("                                                  pid = %d\n", id);
+    processes[id] = proc;
+    proc->id = id;
 
     /* Create a VSpace */
     proc->vspace_ut = process_alloc_retype(proc, cspace, &proc->vspace, seL4_ARM_PageGlobalDirectoryObject,
@@ -284,7 +288,7 @@ bool process_init(char *app_name, seL4_CPtr ep)
     }
 
     /* now mutate the cap, thereby setting the badge */
-    err = cspace_mint(&proc->cspace, user_ep, cspace, ep, seL4_AllRights, id);
+    err = cspace_mint(&proc->cspace, user_ep, cspace, ep, seL4_AllRights, id + BADGE_BASE);
     if (err) {
         ZF_LOGE("Failed to mint user ep");
         return false;
@@ -332,7 +336,7 @@ bool process_init(char *app_name, seL4_CPtr ep)
     sos_stat_t stat_buf;
     sos_nfs_stat(app_name, &stat_buf);
     elf_size = stat_buf.st_size;
-    printf("elf_size %u\n", elf_size);
+    //printf("elf_size %u\n", elf_size);
 
     sos_nfs_close(fh);
 
@@ -366,6 +370,8 @@ bool process_init(char *app_name, seL4_CPtr ep)
     printf("Starting %s at %p\n", app_name, (void *) context.pc);
     err = seL4_TCB_WriteRegisters(proc->tcb, 1, 0, 2, &context);
     ZF_LOGE_IF(err, "Failed to write registers");
+
+    return id;
 }
 
 proc_t *process_get_by_badge(seL4_Word badge)
@@ -373,12 +379,7 @@ proc_t *process_get_by_badge(seL4_Word badge)
     if (badge < 100) {
         return NULL;
     }
-    return processes[badge-100];
-}
-
-seL4_CPtr process_get_reply_cap(proc_t *proc)
-{
-    return proc->reply;
+    return processes[badge-BADGE_BASE];
 }
 
 void process_set_reply_cap(proc_t *proc, seL4_CPtr reply)
@@ -392,12 +393,12 @@ void process_reply(proc_t *proc, unsigned int msg_len)
     seL4_Send(proc->reply, reply_msg);
 }
 
-const char *process_get_name(proc_t *proc)
+const char *process_name(proc_t *proc)
 {
     return proc->app_name;
 }
 
-seL4_CPtr process_get_tcb(proc_t *proc)
+seL4_CPtr process_tcb(proc_t *proc)
 {
     return proc->tcb;
 }
@@ -455,4 +456,9 @@ void process_set_data2(proc_t *proc, seL4_Word data)
 void process_set_data3(proc_t *proc, seL4_Word data)
 {
     proc->data[3] = data;
+}
+
+int process_id(proc_t *proc)
+{
+    return proc->id;
 }

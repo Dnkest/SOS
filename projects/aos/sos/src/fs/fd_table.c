@@ -1,6 +1,6 @@
 #include "fd_table.h"
 #include "../utils/kmalloc.h"
-#include "../utils/idalloc.h"
+#include "../utils/low_avail_id.h"
 
 fd_table_t *fdt_init()
 {
@@ -10,7 +10,7 @@ fd_table_t *fdt_init()
 
 int fdt_insert(fd_table_t *table, const char *path, size_t size, vnode_t *vnode, fmode_t mode)
 {
-    int id = (int)id_alloc(table->idalloc, 1);
+    int id = (int)low_avail_id_alloc(table->idalloc, 1);
     fd_entry_t *ent = kmalloc(sizeof(fd_entry_t));
     ent->mode = mode;
     ent->size = size;
@@ -28,7 +28,7 @@ int fdt_delete(fd_table_t *table, int file)
 
     kfree(e->vnode);
     kfree(e);
-    id_free(table->idalloc, file, 1);
+    low_avail_id_free(table->idalloc, file, 1);
     return 0;
 }
 

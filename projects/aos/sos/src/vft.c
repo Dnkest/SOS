@@ -4,14 +4,13 @@
 
 #include "vft.h"
 #include "syscall.h"
-#include "utils/idalloc.h"
+#include "utils/low_avail_id.h"
 #include "frame_table.h"
 #include "pagefile.h"
 #include "vmem_layout.h"
 #include "mapping.h"
 
-#define MAX_VFRAMES 2000
-#define TMP 0x760000000000
+#define MAX_VFRAMES 4000
 
 #if CONFIG_SOS_FRAME_LIMIT == 0
     #define MAX_PFRAMES 1
@@ -19,7 +18,8 @@
     #define MAX_PFRAMES CONFIG_SOS_FRAME_LIMIT-1
 #endif
 
-static id_table_t *idt = NULL;
+static low_avail_id_t *vframe_ids = NULL;
+static low_avail_id_t *paging_ids = NULL;
 
 typedef struct vframe_ent {
     frame_ref_t frame_ref;
@@ -37,40 +37,9 @@ typedef struct pframe_ent {
     char pin;
 } pframe_ent_t;
 
-static unsigned long int used = 0;
-
 static pframe_ent_t pframes[MAX_PFRAMES];
-
+static unsigned long int used = 0;
 static unsigned long int ptr = 0;
-
-int vft_set_reference(vframe_ref_t vframe, seL4_CPtr vspace, seL4_Word vaddr)
-{
-    // int found = 0;
-    // for (int i = 0; i < MAX_PFRAMES; i++) {
-    //     if (frames[i].vframe_ref == vframe) {
-    //         frames[i].reference = 1;
-    //         found = 1;
-    //     }
-    // }
-    // if (!found && vaddr != PROCESS_IPC_BUFFER) { return 0; }
-
-    // //printf("remapping %u . %p\n", vframe, framecaps[vframe]);
-    // seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
-    // seL4_Error err = cspace_copy(global_cspace(), frame_cap, global_cspace(),
-    //                 frame_page(vframes[vframe]), seL4_AllRights);
-    // assert(err == 0);
-    // //assert(frame_cap != seL4_CapNull);
-    // //printf("new %p\n", frame_cap);
-    // framecaps[vframe] = frame_cap;
-    // err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, seL4_AllRights,
-    //         seL4_ARM_Default_VMAttributes);
-    // // seL4_Error err = seL4_ARM_Page_Remap(framecaps[vframe], vspace, seL4_ReadWrite,
-    // //         seL4_ARM_Default_VMAttributes | seL4_ARM_ExecuteNever);
-    // //printf("err %d\n", err);
-    // assert(err == 0);
-
-    return 1;
-}
 
 int find_victim()
 {
@@ -102,24 +71,26 @@ void vft_page_out(int v)
 {
     frame_ref_t fr = pframes[v].frame_ref;
     unsigned long pos = pframes[v].vframe_ref;
+    seL4_Word tmp = low_avail_id_alloc(paging_ids, 1);
 
     seL4_CPtr local = cspace_alloc_slot(global_cspace());
     assert(local != seL4_CapNull);
     seL4_Error err = cspace_copy(global_cspace(), local, global_cspace(), frame_page(fr), seL4_AllRights);
     assert(err == 0);
     err = map_frame(global_cspace(), local, seL4_CapInitThreadVSpace,
-                    TMP, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+                    tmp, seL4_AllRights, seL4_ARM_Default_VMAttributes);
     assert(err == 0);
 
-    pagefile_write(TMP, pos);
+    pagefile_write(tmp, pos);
     
-    memset(TMP, 0, 1<<12);
+    memset(tmp, 0, 1<<12);
     seL4_ARM_Page_Unmap(local);
     cspace_delete(global_cspace(), local);
     cspace_free_slot(global_cspace(), local);
 
     err = cspace_revoke(global_cspace(), frame_page(fr));
     assert(err == 0);
+    low_avail_id_free(paging_ids, tmp, 1);
     //printf("paging out %p\n", vframes[pframes[v].vframe_ref].vaddr);
     //pframes[v].reference = 1;
     //printf("paged out frame %d(%u) to %d\n", pos, fr, pos);
@@ -129,17 +100,18 @@ void vft_page_in(int v, vframe_ref_t vframe)
 {
     frame_ref_t fr = pframes[v].frame_ref;
     unsigned long pos = vframe;
+    seL4_Word tmp = low_avail_id_alloc(paging_ids, 1);
 
     seL4_CPtr local = cspace_alloc_slot(global_cspace());
     assert(local != seL4_CapNull);
     seL4_Error err = cspace_copy(global_cspace(), local, global_cspace(), frame_page(fr), seL4_AllRights);
     assert(err == 0);
     err = map_frame(global_cspace(), local, seL4_CapInitThreadVSpace,
-                    TMP, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+                    tmp, seL4_AllRights, seL4_ARM_Default_VMAttributes);
     assert(err == 0);
     //printf("3\n");
     //printf("vframe is %u\n", vframe);
-    pagefile_read(TMP, pos);
+    pagefile_read(tmp, pos);
     //printf("reading finished\n");
     //printf(":%s\n", 0x6000000002b0);
 
@@ -151,6 +123,7 @@ void vft_page_in(int v, vframe_ref_t vframe)
     err = cspace_copy(global_cspace(), e.frame_cap, global_cspace(), frame_page(fr), seL4_AllRights);
     assert(err == 0);
     err = seL4_ARM_Page_Map(e.frame_cap, e.vspace, e.vaddr, seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    low_avail_id_free(paging_ids, tmp, 1);
     //printf("paging in %p\n", vframes[vframe].vaddr);
 }
 
@@ -191,7 +164,8 @@ frame_ref_t frame_ref_from_v(vframe_ref_t vframe)
 
 vframe_ref_t valloc_frame()
 {
-    if (idt == NULL) { idt = id_table_init(1, 1, MAX_VFRAMES); }
+    if (vframe_ids == NULL) { vframe_ids = id_table_init(1, 1, MAX_VFRAMES); }
+    if (paging_ids == NULL) { paging_ids = id_table_init(SOS_PAGING, 4096, 100); }
 
     if (CONFIG_SOS_FRAME_LIMIT == 0ul) {
         return (vframe_ref_t)alloc_frame();
@@ -200,7 +174,7 @@ vframe_ref_t valloc_frame()
         //printf("allocating frame at index %u\n", used);
         frame_ref_t nf = alloc_frame();
 
-        int i = id_alloc(idt, 1);
+        int i = low_avail_id_alloc(vframe_ids, 1);
         vframes[i].frame_ref = nf;
 
         pframe_ent_t e = { nf, (vframe_ref_t)i, 1, 0 };
@@ -220,7 +194,7 @@ vframe_ref_t valloc_frame()
         //printf("paging out one frame\n");
         vft_page_out(v);
 
-        int i = id_alloc(idt, 1);
+        int i = low_avail_id_alloc(vframe_ids, 1);
         vframes[i].frame_ref = pframes[v].frame_ref;
 
         pframes[v].vframe_ref = i;
@@ -245,7 +219,7 @@ vframe_ref_t vframe_dup(vframe_ref_t vframe)
 {
     vframe_ent_t origin = vframes[vframe];
 
-    int i = id_alloc(idt, 1);
+    int i = low_avail_id_alloc(vframe_ids, 1);
     vframes[i].frame_ref = origin.frame_ref;
 
     return i;
@@ -258,6 +232,7 @@ void vft_pin_frame(frame_ref_t frame_num)
     }
     int i = 0;
     while (pframes[i].frame_ref != frame_num) { i++; }
+    if (i == MAX_PFRAMES) { return; }
     pframes[i].pin = 1;
 }
 
@@ -269,5 +244,6 @@ void vft_unpin_frame(frame_ref_t frame_num)
 
     int i = 0;
     while (pframes[i].frame_ref != frame_num) { i++; }
+    if (i == MAX_PFRAMES) { return; }
     pframes[i].pin = 0;
 }

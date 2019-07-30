@@ -71,10 +71,11 @@ add_executable(
     src/fs/vnode.c
     src/fs/serial.c
     src/utils/kmalloc.c
-    src/utils/idalloc.c
+    src/utils/low_avail_id.c
     src/utils/eventq.c
     src/utils/pq.c
     src/utils/q.c
+    src/utils/circular_id.c
     src/pagefile.c
     src/globals.c
     src/proc.c

@@ -13,7 +13,7 @@ int vfs_open(fd_table_t *table, const char *path, fmode_t mode)
     if (strcmp(path, "console") == 0) {
         //printf("openning console %x\n", mode);
         vnode_t *vnode = vnode_init(serial_close, serial_read, serial_write);
-        if (serial_open(mode)) { return -1; }
+        if (serial_open(mode) < 0) { return -1; }
         return fdt_insert(table, "console", 0xffffffffffffffff, vnode, mode);
     } else {
         //printf("openning %s %x\n", path, mode);

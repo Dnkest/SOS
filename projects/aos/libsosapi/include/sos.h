@@ -25,6 +25,10 @@
 #define SOS_SYSCALL_GETDIRENT   5
 #define SOS_SYSCALL_STAT        6
 #define SOS_SYSCALL_CLOSE       7
+#define SOS_SYSCALL_PROC_CREATE 8
+#define SOS_SYSCALL_PROC_DELETE 9
+#define SOS_SYSCALL_MY_ID       10
+#define SOS_SYSCALL_PROC_STATUS 11
 
 /* Endpoint for talking to SOS */
 #define SOS_IPC_EP_CAP     (0x1)

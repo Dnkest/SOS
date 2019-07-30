@@ -1,13 +1,16 @@
 #include <stdio.h>
 #include <utils/page.h>
+#include <picoro/picoro.h>
 
 #include "uio.h"
 #include "utils/kmalloc.h"
-#include "utils/idalloc.h"
+#include "utils/circular_id.h"
 #include "vmem_layout.h"
 #include "globals.h"
 
-static id_table_t *mapping_addr_table;
+static circular_id_t *mapping_addr_table;
+
+static char lock = 0;
 
 struct uio {
     proc_t *proc;
@@ -20,7 +23,7 @@ struct uio {
 
 uio_t *uio_init(proc_t *proc)
 {
-    if (mapping_addr_table == NULL) { mapping_addr_table = id_table_init(SOS_MAP, PAGE_SIZE_4K, 100); }
+    if (mapping_addr_table == NULL) { mapping_addr_table = circular_id_init(SOS_UIO, PAGE_SIZE_4K, 10); }
     uio_t *ret = (uio_t *)kmalloc(sizeof(uio_t));
     ret->proc = proc;
     return ret;
@@ -28,6 +31,9 @@ uio_t *uio_init(proc_t *proc)
 
 seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
 {
+    while (lock == 1) { yield(0); }
+    lock = 1;
+
     proc_t *proc = uio->proc;
 
     seL4_Word user_base_vaddr = user_vaddr & 0xFFFFFFFFF000;
@@ -39,13 +45,13 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
     uio->frame_caps = (seL4_CPtr *)kmalloc(num_pages *sizeof(seL4_CPtr));
     uio->frame_refs = (frame_ref_t *)kmalloc(num_pages *sizeof(frame_ref_t));
 
-    seL4_Word kernel_base_vaddr = id_alloc(mapping_addr_table, num_pages);
+    seL4_Word kernel_base_vaddr = circular_id_alloc(mapping_addr_table, num_pages);
     uio->vaddr = kernel_base_vaddr;
 
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
 
-        //printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
+        printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(global_cspace());
 
         if (kernel_frame_cap == seL4_CapNull) {
@@ -88,11 +94,15 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
         kernel_vaddr_tmp += PAGE_SIZE_4K;
     }
     seL4_Word ret = kernel_base_vaddr + user_vaddr - user_base_vaddr;
+    lock = 0;
     return ret;
 }
 
 void uio_unmap(uio_t *uio)
 {
+    while (lock == 1) { yield(0); }
+    lock = 1;
+
     for (unsigned int i = 0; i < uio->num_pages; i++) {
 
         seL4_CPtr frame_cap = uio->frame_caps[i];
@@ -111,7 +121,8 @@ void uio_unmap(uio_t *uio)
 
     kfree(uio->frame_caps);
     kfree(uio->frame_refs);
-    id_free(mapping_addr_table, uio->vaddr, uio->num_pages);
+    circular_id_free(mapping_addr_table, uio->vaddr, uio->num_pages);
+    lock = 0;
 }
 
 void uio_destroy(uio_t *uio)

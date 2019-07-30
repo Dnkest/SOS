@@ -117,6 +117,18 @@ void syscall_close_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Wo
     process_reply(proc, 1);
 }
 
+void syscall_process_create_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
+{
+    seL4_Word path = arg0;
+    seL4_Word len = arg1;
+
+    uio_t *uio = uio_init(proc);
+    char *path_vaddr = (char *)uio_map(uio, path, len);
+    seL4_SetMR(0, process_init(path_vaddr, ipc_ep()));
+    uio_destroy(uio);
+    process_reply(proc, 1);
+}
+
 void syscall_handlers_init()
 {
     handlers[SOS_SYSCALL_OPEN] = syscall_open_handler;
@@ -126,14 +138,14 @@ void syscall_handlers_init()
     handlers[SOS_SYSCALL_GETDIRENT] = syscall_getdirent_handler;
     handlers[SOS_SYSCALL_STAT] = syscall_stat_handler;
     handlers[SOS_SYSCALL_CLOSE] = syscall_close_handler;
+    handlers[SOS_SYSCALL_PROC_CREATE] = syscall_process_create_handler;
 }
 
 void *sos_handle_syscall(void *data)
 {
     proc_t *proc = (proc_t *)data;
     seL4_Word syscall_number = process_get_data0(proc);
-    if (syscall_number < SYSCALL_MAX) {
-        printf("got syscall %u\n", syscall_number);
+    if (syscall_number <= SYSCALL_MAX) {
         handlers[syscall_number](proc,
                                 process_get_data1(proc),
                                 process_get_data2(proc),
@@ -147,7 +159,7 @@ void *sos_handle_vm_fault(void *data)
 {
     proc_t *proc = (proc_t *)data;
     seL4_Word fault_address = process_get_data0(proc);
-    printf("faultaddress-> %p\n", fault_address);
+    //printf("faultaddress-> %p\n", fault_address);
 
     seL4_Word vaddr = fault_address & MASK;
     addrspace_t *addrspace = process_addrspace(proc);
@@ -172,7 +184,7 @@ void *sos_handle_vm_fault(void *data)
         frame_ref_from_v(vframe);
         process_reply(proc, 0);
     } else {
-        printf("vm fault on address %p", fault_address);
+        printf("process %d vm fault %p\n", process_id(proc), fault_address);
     }
     //ZF_LOGF("vm fault on address %p", fault_address);
 }

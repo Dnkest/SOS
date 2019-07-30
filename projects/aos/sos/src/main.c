@@ -38,9 +38,7 @@
 #include "tests.h"
 #include "syscall.h"
 #include "addrspace.h"
-//#include "process.h"
 #include "utils/kmalloc.h"
-#include "utils/idalloc.h"
 #include "pagefile.h"
 #include "globals.h"
 #include "proc.h"
@@ -60,7 +58,6 @@
 #define IRQ_EP_BADGE         BIT(seL4_BadgeBits - 1ul)
 #define IRQ_IDENT_BADGE_BITS MASK(seL4_BadgeBits - 1ul)
 
-#define TTY_NAME             "sosh"
 
 /*
  * A dummy starting syscall
@@ -69,23 +66,12 @@
 
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
-extern char _cpio_archive[];
-extern char _cpio_archive_end[];
 extern char __eh_frame_start[];
 /* provided by gcc */
 extern void (__register_frame)(void *);
 
 /* root tasks cspace */
 static cspace_t cspace;
-
-static addrspace_t *global_addrspace;
-
-static coro c;
-static coro proc_c;
-static coro vm_c;
-static int proc_ready = 0;
-
-static int no_vm_fault = 1;
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *alloc_retype(seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -145,7 +131,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             sos_handle_irq_notification(&badge);
 
         } else if (proc != NULL && label == seL4_Fault_NullFault) {
-            printf("(2) badge %u\n", badge);
+            printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
 
             /* It's not a fault or an interrupt, it must be an IPC
              * message from app! */
@@ -156,7 +142,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             eventQ_produce(sos_handle_syscall, (void *)proc);
 
         } else if (proc != NULL && label == seL4_Fault_VMFault) {
-            printf("(3) badge %u\n", badge);
+            //printf("(3) badge %u\n", badge);
 
             process_set_data0(proc, seL4_GetMR(seL4_VMFault_Addr));
             eventQ_produce(sos_handle_vm_fault, (void *)proc);
@@ -164,9 +150,9 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else {
 
             /* some kind of fault */
-            debug_print_fault(message, process_get_name(proc));
+            debug_print_fault(message, process_name(proc));
             /* dump registers too */
-            debug_dump_registers(process_get_tcb(proc));
+            debug_dump_registers(process_tcb(proc));
 
             ZF_LOGF("The SOS skeleton does not know how to handle faults!");
         }
@@ -241,9 +227,9 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
 
-void *proc_init(void *p)
+void *start_proc_init(void *p)
 {
-    printf("Start sosh process\n");
+    printf("Start first process\n");
     process_init("sosh", (seL4_CPtr)p);
 }
 
@@ -259,6 +245,8 @@ NORETURN void *main_continued(UNUSED void *arg)
         IRQ_EP_BADGE,
         IRQ_IDENT_BADGE_BITS
     );
+
+    set_ipc_ep(ipc_ep);
 
     /* run sos initialisation tests */
     run_tests(&cspace);
@@ -285,7 +273,7 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     eventQ_init();
     eventQ_produce(pagefile_init, NULL);
-    eventQ_produce(proc_init, (void *)ipc_ep);
+    eventQ_produce(start_proc_init, (void *)ipc_ep);
 
     printf("\nSOS entering syscall loop\n");
     syscall_loop(ipc_ep);
