@@ -53,10 +53,24 @@ void q_pop(Q q)
     }
 }
 
-void q_debug(Q q)
+void *q_remove(Q q, int (*comparison)(void *, void *), void *data)
+{
+    for (int i = 0; i < q->size; i++) {
+        if (comparison(q->arr[i], data)) {
+            void *ret = q->arr[i];
+            q->size--;
+            for (int j = i; j < q->size; j++) {
+                q->arr[j] = q->arr[j+1];
+            }
+            return ret;
+        }
+    }
+}
+
+void q_debug(Q q, void (*debug)(void *))
 {
     for (int i =0 ; i < q->size; i++) {
-        printf("%p->", q->arr[i]);
+        debug(q->arr[i]);
     }
     printf("\n");
 }

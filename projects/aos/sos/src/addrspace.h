@@ -38,3 +38,4 @@ void addrspace_define_region(addrspace_t *addrspace, seL4_Word vaddr,
 
 seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr frame_cap,
                                     seL4_CPtr vspace, seL4_Word vaddr);
+void addrspace_destory(addrspace_t *addrspace);

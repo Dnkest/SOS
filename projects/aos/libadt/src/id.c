@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-low_avail_id_t *id_table_init(unsigned int first)
+low_avail_id_t *low_avail_id_init(unsigned int first)
 {
     low_avail_id_t *table = malloc(sizeof(struct id_table));
     table->next = 0;
@@ -65,7 +65,7 @@ void low_avail_id_free(low_avail_id_t *table, unsigned int id)
 
 void id_tests(low_avail_id_t *table)
 {
-    low_avail_id_t *table1 = id_table_init(0);
+    low_avail_id_t *table1 = low_avail_id_init(0);
 
     unsigned int t1 = id_next(table1);
     assert(t1 == 0);

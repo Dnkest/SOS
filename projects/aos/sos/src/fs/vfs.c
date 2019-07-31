@@ -7,6 +7,7 @@
 #include "sos_nfs.h"
 #include "vfs.h"
 #include "fd_table.h"
+#include "../utils/kmalloc.h"
 
 int vfs_open(const char *path, int flags, vnode_t **vnode)
 {
@@ -14,7 +15,14 @@ int vfs_open(const char *path, int flags, vnode_t **vnode)
         //printf("openning console %x\n", flags);
 
         *vnode = vnode_init(serial_close, serial_read, serial_write);
-        while (serial_open(flags) < 0) { yield(0); }
+        while (serial_open(flags) != 0) {
+            void *stop = yield(0);
+            //printf("stop %d\n", stop);
+            if ((int)stop == -1) {
+                kfree(*vnode);
+                return -1;
+            }
+        }
         (*vnode)->size = 0xffffffffffffffff;
 
         return 0;

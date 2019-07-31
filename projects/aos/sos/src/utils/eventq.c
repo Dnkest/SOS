@@ -53,16 +53,32 @@ void eventQ_consume()
 {
     if (!eventQ_empty()) {
         event_t *front = (event_t *)q_front(eventQ);
-
         resume(front->c, front->data);
         if (resumable(front->c)) {
-            //printf("keep going\n");
-            //q_debug(eventQ);
             q_push(eventQ, (void *)front);
             q_pop(eventQ);
         } else {
-            //printf("finished\n");
             eventQ_pop();
         }
     }
+}
+
+static int comparison(void *a, void *b)
+{
+    return ((event_t *)a)->data == b;
+}
+
+static void debug(void *a)
+{
+    printf("%p{%p}->", a, ((event_t *)a)->data);
+}
+
+void eventQ_cleanup(void *proc)
+{
+    //q_debug(eventQ, debug);
+    event_t *e = (event_t *)q_remove(eventQ, comparison, proc);
+    while (resumable(e->c)) {
+        resume(e->c, -1);
+    }
+    kfree(e);
 }

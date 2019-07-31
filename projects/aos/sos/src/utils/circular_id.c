@@ -57,3 +57,9 @@ void circular_id_free(circular_id_t *table, void *start, unsigned int n)
         table->bitmap[s+i] = 0;
     }
 }
+
+void circular_id_destroy(circular_id_t *table)
+{
+    kfree(table->bitmap);
+    kfree(table);
+}

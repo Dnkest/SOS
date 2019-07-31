@@ -9,3 +9,4 @@ typedef struct pagetable pagetable_t;
 pagetable_t *pagetable_create();
 void pagetable_put(pagetable_t *table, seL4_Word vaddr, vframe_ref_t vframe);
 vframe_ref_t pagetable_lookup(pagetable_t *table, seL4_Word vaddr);
+void pagetable_destroy(pagetable_t *table);

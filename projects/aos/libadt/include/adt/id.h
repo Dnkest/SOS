@@ -7,7 +7,7 @@ typedef struct id_table {
     unsigned int next;
 } low_avail_id_t;
 
-low_avail_id_t *id_table_init(unsigned int first);
+low_avail_id_t *low_avail_id_init(unsigned int first);
 
 unsigned int id_next(low_avail_id_t *table);
 

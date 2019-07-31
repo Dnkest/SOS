@@ -178,6 +178,19 @@ void syscall_process_create_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
     process_reply(proc, 1);
 }
 
+void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
+{
+    seL4_Word pid = arg0;
+    if (process_exists_by_id((int)pid)) {
+        eventQ_cleanup((void *)process_get_by_id((int)pid));
+        process_delete(process_get_by_id((int)pid));
+        seL4_SetMR(0, 0);
+    } else {
+        seL4_SetMR(0, -1);
+    }
+    process_reply(proc, 1);
+}
+
 void syscall_process_id_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_SetMR(0, process_id(proc));
@@ -193,12 +206,13 @@ void syscall_process_status_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
     sos_process_t *buf_vaddr = (sos_process_t *)uio_map(uio, buf, (size_t)max *sizeof(sos_process_t));
     int i = 0, n = 0;
     while (i < (int)max && n < process_max()) {
-        proc_t *tmp = process_get_by_id(n);
-        if (tmp != NULL) {
-            buf_vaddr[n].pid = process_id(tmp);
-            buf_vaddr[n].size = process_size(tmp);
-            buf_vaddr[n].stime = process_time(tmp);
-            strncpy(buf_vaddr[n].command, process_name(tmp), 30);
+        proc_t *tmp;
+        if (process_exists_by_id(n)) {
+            tmp = process_get_by_id(n);
+            buf_vaddr[i].pid = process_id(tmp);
+            buf_vaddr[i].size = process_size(tmp);
+            buf_vaddr[i].stime = process_time(tmp);
+            strncpy(buf_vaddr[i].command, process_name(tmp), 30);
             i++;
         }
         n++;
@@ -242,7 +256,7 @@ void syscall_handlers_init()
     handlers[SOS_SYSCALL_STAT] = syscall_stat_handler;
     handlers[SOS_SYSCALL_CLOSE] = syscall_close_handler;
     handlers[SOS_SYSCALL_PROC_CREATE] = syscall_process_create_handler;
-    //handlers[SOS_SYSCALL_PROC_DELETE] = syscall_process_delete_handler
+    handlers[SOS_SYSCALL_PROC_DELETE] = syscall_process_delete_handler;
     handlers[SOS_SYSCALL_MY_ID] = syscall_process_id_handler;
     handlers[SOS_SYSCALL_PROC_STATUS] = syscall_process_status_handler;
     handlers[SOS_SYSCALL_PROC_WAIT] = syscall_process_wait_handler;

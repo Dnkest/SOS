@@ -1,5 +1,6 @@
 #include <picoro/picoro.h>
 #include <serial/serial.h>
+#include <stdio.h>
 
 #include "serial.h"
 
@@ -16,6 +17,7 @@ int serial_open(int flags)
         if (sHandle == NULL) {
             return -1;
         }
+        occupied = 1;
         return 0;
     } else if (!occupied || flags == 1) {
         return 0;

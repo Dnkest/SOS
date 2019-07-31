@@ -11,13 +11,14 @@
 #include "ut.h"
 #include "globals.h"
 #include "addrspace.h"
+#include "vmem_layout.h"
+#include "elfload.h"
 
 #include "fs/sos_nfs.h"
+#include "fs/fd_table.h"
 
 #include "utils/circular_id.h"
 #include "utils/kmalloc.h"
-#include "vmem_layout.h"
-#include "elfload.h"
 
 #define MAX_PROCESS 128
 #define BADGE_BASE  100
@@ -34,13 +35,10 @@ struct proc {
     ut_t *vspace_ut;
     seL4_CPtr vspace;
 
-    ut_t *ipc_buffer_ut;
     seL4_CPtr ipc_buffer;
 
     cspace_t cspace;
-
-    ut_t *stack_ut;
-    seL4_CPtr stack;
+    int cspace_inited;
 
     addrspace_t *addrspace;
     fd_table_t *fdt;
@@ -237,16 +235,8 @@ int process_init(char *app_name, seL4_CPtr ep)
     proc->fdt = fdt_init();
     proc->start_timestamp = get_time();
 
-    if (pids == NULL) {
-        pids = circular_id_init(0, 1, MAX_PROCESS);
-        //for (int i = 0; i < MAX_PROCESS; i++) { processes[i] = NULL; }
-    }
-    // for (int i = 0; i < MAX_PROCESS; i++) {
-    //     if (processes[i] != NULL && strcmp(processes[i]->app_name, app_name) == 0) {
-    //         failed = true;
-    //         return false;
-    //     }
-    // }
+    if (pids == NULL) { pids = circular_id_init(0, 1, MAX_PROCESS); }
+
     int id = circular_id_alloc(pids, 1);
     //printf("                                                  pid = %d\n", id);
     proc->id = id;
@@ -301,6 +291,7 @@ int process_init(char *app_name, seL4_CPtr ep)
         ZF_LOGE("Failed to mint user ep");
         return false;
     }
+    proc->cspace_inited = 1;
 
     /* Create a new TCB object */
     proc->tcb_ut = process_alloc_retype(proc, cspace, &proc->tcb, seL4_TCBObject, seL4_TCBBits);
@@ -344,7 +335,6 @@ int process_init(char *app_name, seL4_CPtr ep)
     sos_stat_t stat_buf;
     sos_nfs_stat(app_name, &stat_buf);
     elf_size = stat_buf.st_size;
-    //printf("elf_size %u\n", elf_size);
 
     sos_nfs_close(fh);
 
@@ -380,6 +370,42 @@ int process_init(char *app_name, seL4_CPtr ep)
     ZF_LOGE_IF(err, "Failed to write registers");
 
     return id;
+}
+
+void process_delete(proc_t *proc)
+{
+    if (proc->id == 0) { return; }
+printf("d1\n");
+    if (proc->tcb_ut != NULL) {
+        ut_free(proc->tcb_ut);
+    }
+
+    if (proc->tcb != seL4_CapNull) {
+        cspace_delete(global_cspace(), proc->tcb);
+        cspace_free_slot(global_cspace(), proc->tcb);
+    }
+
+    if (proc->vspace_ut != NULL) {
+        ut_free(proc->vspace_ut);
+    }
+
+    if (proc->vspace != seL4_CapNull) {
+        cspace_delete(global_cspace(), proc->vspace);
+        cspace_free_slot(global_cspace(), proc->vspace);
+    }
+
+    if (proc->cspace_inited) {
+        cspace_destroy(&proc->cspace);
+    }
+//printf("d2\n");
+    addrspace_destory(proc->addrspace);
+//printf("d3\n");
+    fdt_destroy(proc->fdt);
+//printf("d4\n");
+    processes[proc->id] = NULL;
+    circular_id_free(pids, proc->id, 1);
+//printf("d5\n");
+    kfree(proc);
 }
 
 int process_exists_by_badge(seL4_Word badge)

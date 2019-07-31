@@ -78,10 +78,7 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
                                  seL4_CPtr *free_slots, seL4_Word *used)
 {
     /* Attempt the mapping */
-    //printf("---------------------------\n");
-    //printf("cspace(%p) fc(%p) vspace(%p) vaddr(%p)", cspace, frame_cap, vspace, vaddr);
     seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-    //printf("  err %d\n", err);
     for (size_t i = 0; i < MAPPING_SLOTS && err == seL4_FailedLookup; i++) {
         /* save this so nothing else trashes the message register value */
         seL4_Word failed = seL4_MappingFailedLookupLevel();
@@ -97,7 +94,7 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
         seL4_CPtr slot;
         if (used != NULL) {
             slot = free_slots[i];
-            *used |= BIT(i);
+            used[i] = 1;
         } else {
             slot = cspace_alloc_slot(cspace);
         }
@@ -110,17 +107,13 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
         switch (failed) {
         case SEL4_MAPPING_LOOKUP_NO_PT:
             err = retype_map_pt(cspace, vspace, vaddr, ut->cap, slot);
-            //seL4_DebugPutChar('a');
             break;
         case SEL4_MAPPING_LOOKUP_NO_PD:
-        //seL4_DebugPutChar('v');
             err = retype_map_pd(cspace, vspace, vaddr, ut->cap, slot);
-            //seL4_DebugPutChar('c');
             break;
 
         case SEL4_MAPPING_LOOKUP_NO_PUD:
             err = retype_map_pud(cspace, vspace, vaddr, ut->cap, slot);
-            //seL4_DebugPutChar('d');
             break;
         }
 
@@ -129,8 +122,6 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
             err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
         }
     }
-    //seL4_DebugPutChar('e');
-    //printf("---------------------------\n\n");
     return err;
 }
 

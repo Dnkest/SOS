@@ -9,6 +9,8 @@ typedef struct proc proc_t;
 
 int process_init(char *app_name, seL4_CPtr ep);
 
+void process_delete(proc_t *proc);
+
 int process_max();
 
 int process_exists_by_badge(seL4_Word badge);

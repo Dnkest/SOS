@@ -15,11 +15,6 @@
 #define CAPACITY (PAGE_SIZE_4K-sizeof(struct cap_list *)-sizeof(int))/sizeof(seL4_CPtr)
 #define PAGE_MASK 0xFFFFFFFFF000
 
-struct cap_list_node {
-    seL4_CPtr cap;
-    struct cap_list_node *next;
-};
-
 struct cap_list {
     seL4_CPtr caps[CAPACITY];
     int size;
@@ -28,6 +23,24 @@ struct cap_list {
 
 cap_list_t *cap_list_create();
 void cap_list_insert(cap_list_t *list, seL4_CPtr cap);
+void cap_list_destroy(cap_list_t *list);
+
+void addrspace_destory(addrspace_t *addrspace)
+{
+//printf("a1\n");
+    pagetable_destroy(addrspace->table);
+//printf("a2\n");
+    cap_list_destroy(addrspace->cap_list);
+//printf("a3\n");
+    region_t *cur = addrspace->regions, *tmp;
+
+    while (cur != NULL) {
+        tmp = cur;
+        cur = cur->next;
+        kfree(tmp);
+    }
+    kfree(addrspace);
+}
 
 addrspace_t *addrspace_create()
 {
@@ -115,9 +128,10 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
         }
     }
 
-    seL4_Word used;
+    seL4_Word used[3];
+    for (int i = 0; i < 3; i++) { used[i] = 0; }
     err = map_frame_cspace(target_cspace, target, vspace, vaddr, seL4_AllRights,
-                            seL4_ARM_Default_VMAttributes, free_slots, &used);
+                            seL4_ARM_Default_VMAttributes, free_slots, used);
     if (err) {
         printf("err%d\n", err);
         ZF_LOGE("Failed to copy cap");
@@ -125,8 +139,8 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
         pagetable_put(addrspace->table, vaddr, vframe);
     }
     for (size_t i = 0; i < MAPPING_SLOTS; i++) {
-        if (used & BIT(i)) {
-            //printf("used %lu\n", i);
+        if (used[i]) {
+            //printf("used %d %p\n", i, free_slots[i]);
             cap_list_insert(list, free_slots[i]);
         } else {
             cspace_delete(target_cspace, free_slots[i]);
@@ -163,11 +177,26 @@ cap_list_t *cap_list_create()
 
 void cap_list_insert(cap_list_t *list, seL4_CPtr cap)
 {
-    assert(list != NULL);
-    while (list->next != NULL) { list = list->next; }
+    while (list != NULL && list->next != NULL) { list = list->next; }
     if (list->size == CAPACITY) {
         list->next = cap_list_create();
         list = list->next;
     }
     list->caps[list->size++] = cap;
+}
+
+void cap_list_destroy(cap_list_t *list)
+{
+    cap_list_t *t;
+    while (list != NULL) {
+        for (int i = 0; i < list->size; i++) {
+            //printf("cap %p\n", list->caps[i]);
+            seL4_ARM_Page_Unmap(list->caps[i]);
+            cspace_delete(global_cspace(), list->caps[i]);
+            cspace_free_slot(global_cspace(), list->caps[i]);
+        }
+        t = list;
+        list = list->next;
+        kfree(t);
+    }
 }

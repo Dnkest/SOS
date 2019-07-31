@@ -183,7 +183,7 @@ void *kmalloc(size_t size)
             list_appen(free_list, new_free_node);
         }
         used += size;
-//printf("%p        alloc       %u(%u)\n", free_node.location, used, size);
+printf("%p        alloc       %u(%u)\n", free_node.location, used, size);
         memset(free_node.location, 0, size);
         return free_node.location;
     } else {

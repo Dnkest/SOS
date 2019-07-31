@@ -8,7 +8,7 @@ struct low_avail_id {
     unsigned int unit;
 };
 
-low_avail_id_t *id_table_init(void *base, unsigned int unit, unsigned int capacity)
+low_avail_id_t *low_avail_id_init(void *base, unsigned int unit, unsigned int capacity)
 {
     low_avail_id_t *table = (low_avail_id_t *)kmalloc(sizeof(low_avail_id_t));
     table->base = base;
@@ -50,9 +50,15 @@ void low_avail_id_free(low_avail_id_t *table, void *start, unsigned int n)
     }
 }
 
+void low_avail_id_destroy(low_avail_id_t *table)
+{
+    kfree(table->bitmap);
+    kfree(table);
+}
+
 void id_alloc_tests()
 {
-    low_avail_id_t *table = id_table_init(0x8000, 1 << 12, 20);
+    low_avail_id_t *table = low_avail_id_init(0x8000, 1 << 12, 20);
     int i = (int)low_avail_id_alloc(table, 1);
     printf("i = %p\n", i);
     i = (int)low_avail_id_alloc(table, 3);
