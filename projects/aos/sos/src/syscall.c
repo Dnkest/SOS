@@ -192,11 +192,14 @@ void syscall_process_status_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
     // uio_destroy(uio_buf);
 }
 
+void sleep_callback(uint32_t id, void *data)
+{
+    process_reply((proc_t *)data, 1);
+}
+
 void syscall_time_usleep_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
-    uint64_t now = get_time(), msec = (uint64_t)arg0;
-    while ((get_time() - now)/1000 < msec) { yield(0); }
-    process_reply(proc, 1);
+    register_timer(arg0 * 1000, sleep_callback, (void *)proc);
 }
 
 void syscall_time_stamp_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
