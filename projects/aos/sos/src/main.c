@@ -109,8 +109,9 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         seL4_Word label = seL4_MessageInfo_get_label(message);
         //printf("badge %u\n", badge);
 
-        proc_t *proc = process_get_by_badge(badge);
-        if (proc != NULL && proc > SOS_KMALLOC) {
+        proc_t *proc = NULL;
+        if (process_exists_by_badge(badge)) {
+            proc = process_get_by_badge(badge);
             //printf("proc %p\n", proc);
             seL4_CPtr reply = cspace_alloc_slot(global_cspace());
             seL4_Error err = cspace_save_reply_cap(global_cspace(), reply);

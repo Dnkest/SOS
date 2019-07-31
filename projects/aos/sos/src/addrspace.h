@@ -20,10 +20,9 @@ typedef struct region {
 } region_t;
 
 typedef struct addrspace {
-    //as_page_table_t *as_page_table;
     region_t *regions;
     pagetable_t *table;
-    ut_t *untypeds;
+    unsigned int pages;
     cap_list_t *cap_list;
 } addrspace_t;
 
@@ -31,7 +30,6 @@ addrspace_t *addrspace_create();
 
 frame_ref_t addrspace_lookup_vframe(addrspace_t *addrspace, seL4_Word vaddr);
 int addrspace_vaddr_exists(addrspace_t *addrspace, seL4_Word vaddr);
-// seL4_Word addrspace_lookup_frame_cap(addrspace_t *addrspace, seL4_Word vaddr);
 
 bool addrspace_check_valid_region(addrspace_t *addrspace, seL4_Word fault_address);
 
@@ -40,17 +38,3 @@ void addrspace_define_region(addrspace_t *addrspace, seL4_Word vaddr,
 
 seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr frame_cap,
                                     seL4_CPtr vspace, seL4_Word vaddr);
-
-// seL4_Error addrspace_map_one_page(addrspace_t *target_addrspace, cspace_t *target_cspace,
-//                                     seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
-//                                     addrspace_t *source_addrspace, cspace_t *source_cspace,
-//                                     seL4_Word source_vaddr);
-// seL4_Error addrspace_map_one_frame(addrspace_t *target_addrspace, cspace_t *target_cspace,
-//                                     seL4_CPtr target, seL4_CPtr vspace, seL4_Word target_vaddr,
-//                                     frame_ref_t frame);
-// seL4_Error addrspace_unmap(addrspace_t *addrspace, cspace_t *cspace,
-//                             seL4_CPtr frame_cap, seL4_Word vaddr);
-
-// void addrspace_unmap_all(addrspace_t *addrspace);
-// frame_ref_t addrspace_fetch_frame(addrspace_t *addrspace, seL4_Word vaddr);
-// int addrspace_set_reference(addrspace_t *addrspace, seL4_CPtr vspace, seL4_Word vaddr);

@@ -193,6 +193,7 @@ static int exec(int argc, char **argv)
     }
 
     if (bg == 0) {
+        printf("closing\n");
         r = close(in);
         assert(r == 0);
     }
@@ -335,7 +336,7 @@ static int m2_tests() {
    /* test reading to a small buffer */
    result = sos_sys_read(console_fd, small_buf, SMALL_BUF_SZ);
    /* make sure you type in at least SMALL_BUF_SZ */
-   printf("1result = %d\n", result);
+   printf("result = %d\n", result);
    assert(result == SMALL_BUF_SZ);
 
    /* test reading into a large on-stack buffer */

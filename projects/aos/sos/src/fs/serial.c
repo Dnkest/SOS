@@ -4,6 +4,7 @@
 #include "serial.h"
 
 static struct serial *sHandle = NULL;
+static int occupied = 0;
 
 static char *read_vaddr;
 static size_t offset;
@@ -16,10 +17,11 @@ int serial_open(int flags)
             return -1;
         }
         return 0;
-    } else if (flags == 1) {
+    } else if (!occupied || flags == 1) {
         return 0;
+    } else {
+        return -1;
     }
-    return -1;
 }
 
 int serial_write(struct nfsfh *fh, char *msg, size_t offset, size_t len)
@@ -48,5 +50,6 @@ int serial_read(struct nfsfh *fh, char *buf, size_t unused, size_t len)
 
 int serial_close(struct nfsfh *fh)
 {
+    occupied = 0;
     return 0;
 }

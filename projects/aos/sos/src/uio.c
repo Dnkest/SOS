@@ -52,7 +52,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
 
-        //printf("mapping %p --> %p (%u/%u)\n", user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
+        //printf("proc %d mapping %p --> %p (%u/%u)\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(global_cspace());
 
         if (kernel_frame_cap == seL4_CapNull) {

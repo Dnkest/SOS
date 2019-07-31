@@ -5,6 +5,7 @@
 #include <aos/debug.h>
 #include <stdio.h>
 #include <sel4/sel4.h>
+#include <clock/clock.h>
 
 #include "proc.h"
 #include "ut.h"
@@ -21,8 +22,10 @@
 #define MAX_PROCESS 128
 #define BADGE_BASE  100
 
+#define N_NAME 32
+
 struct proc {
-    char *app_name;
+    char app_name[N_NAME];
     int id;
 
     ut_t *tcb_ut;
@@ -42,6 +45,7 @@ struct proc {
     addrspace_t *addrspace;
     fd_table_t *fdt;
 
+    uint64_t start_timestamp;
     seL4_Word data[4];
     seL4_CPtr reply;
 };
@@ -231,8 +235,12 @@ int process_init(char *app_name, seL4_CPtr ep)
     proc_t *proc = (proc_t *)kmalloc(sizeof(proc_t));
     proc->addrspace = addrspace_create();
     proc->fdt = fdt_init();
+    proc->start_timestamp = get_time();
 
-    if (pids == NULL) { pids = circular_id_init(0, 1, MAX_PROCESS); }
+    if (pids == NULL) {
+        pids = circular_id_init(0, 1, MAX_PROCESS);
+        //for (int i = 0; i < MAX_PROCESS; i++) { processes[i] = NULL; }
+    }
     // for (int i = 0; i < MAX_PROCESS; i++) {
     //     if (processes[i] != NULL && strcmp(processes[i]->app_name, app_name) == 0) {
     //         failed = true;
@@ -240,10 +248,10 @@ int process_init(char *app_name, seL4_CPtr ep)
     //     }
     // }
     int id = circular_id_alloc(pids, 1);
-    printf("                                                  pid = %d\n", id);
-    processes[id] = proc;
+    //printf("                                                  pid = %d\n", id);
     proc->id = id;
-
+    processes[id] = proc;
+    
     /* Create a VSpace */
     proc->vspace_ut = process_alloc_retype(proc, cspace, &proc->vspace, seL4_ARM_PageGlobalDirectoryObject,
                                               seL4_PGDBits);
@@ -320,7 +328,7 @@ int process_init(char *app_name, seL4_CPtr ep)
 
     /* Provide a name for the thread -- Helpful for debugging */
     NAME_THREAD(proc->tcb, app_name);
-    proc->app_name = app_name;
+    strncpy(proc->app_name, app_name, N_NAME);
 
     /* parse the cpio image */
     ZF_LOGI("\nStarting \"%s\"...\n", app_name);
@@ -374,12 +382,29 @@ int process_init(char *app_name, seL4_CPtr ep)
     return id;
 }
 
+int process_exists_by_badge(seL4_Word badge)
+{
+    return (int)badge >= BADGE_BASE && processes[badge-BADGE_BASE] != NULL;
+}
+
+int process_exists_by_id(int pid)
+{
+    return pid >= 0 && pid < MAX_PROCESS && processes[pid] != NULL;
+}
+
 proc_t *process_get_by_badge(seL4_Word badge)
 {
-    if (badge < 100) {
-        return NULL;
-    }
     return processes[badge-BADGE_BASE];
+}
+
+proc_t *process_get_by_id(int pid)
+{
+    return processes[pid];
+}
+
+int process_max()
+{
+    return MAX_PROCESS;
 }
 
 void process_set_reply_cap(proc_t *proc, seL4_CPtr reply)
@@ -393,7 +418,7 @@ void process_reply(proc_t *proc, unsigned int msg_len)
     seL4_Send(proc->reply, reply_msg);
 }
 
-const char *process_name(proc_t *proc)
+char *process_name(proc_t *proc)
 {
     return proc->app_name;
 }
@@ -416,6 +441,22 @@ fd_table_t *process_fdt(proc_t *proc)
 seL4_CPtr process_vspace(proc_t *proc)
 {
     return proc->vspace;
+}
+
+int process_id(proc_t *proc)
+{
+    return proc->id;
+}
+
+unsigned process_time(proc_t *proc)
+{
+    return get_time() - proc->start_timestamp;
+}
+
+unsigned process_size(proc_t *proc)
+{
+    assert(proc->addrspace != NULL);
+    return proc->addrspace->pages;
 }
 
 seL4_Word process_get_data0(proc_t *proc)
@@ -456,9 +497,4 @@ void process_set_data2(proc_t *proc, seL4_Word data)
 void process_set_data3(proc_t *proc, seL4_Word data)
 {
     proc->data[3] = data;
-}
-
-int process_id(proc_t *proc)
-{
-    return proc->id;
 }
