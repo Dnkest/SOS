@@ -9,10 +9,10 @@ typedef int (*vnode_write)(struct nfsfh *fh, const char *buf, size_t offset, siz
 
 typedef struct vnode {
     struct nfsfh *fh;
+    size_t size;
     vnode_close close_f;
     vnode_read read_f;
     vnode_write write_f;
 } vnode_t;
 
 vnode_t *vnode_init(vnode_close close_f, vnode_read read_f, vnode_write write_f);
-vnode_t *vnode_copy(vnode_t *vnode);

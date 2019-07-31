@@ -1,7 +1,10 @@
 #include <picoro/picoro.h>
 #include <sys/types.h>
+#include <clock/clock.h>
 #include <stdio.h>
+#include <fcntl.h>
 
+#include "fs/vnode.h"
 #include "syscall.h"
 #include "proc.h"
 #include "vmem_layout.h"
@@ -29,12 +32,19 @@ seL4_Word buffer_size_trunc(seL4_Word size)
 void syscall_open_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word path = arg0;
-    seL4_Word mode = arg1;
+    seL4_Word flags = arg1;
     seL4_Word len = arg2;
 
     uio_t *uio = uio_init(proc);
     const char *path_vaddr = (const char *)uio_map(uio, path, len);
-    seL4_SetMR(0, vfs_open(process_fdt(proc), path_vaddr, (fmode_t)mode));
+
+    vnode_t *vnode;
+    if (vfs_open(path_vaddr, (int)flags, &vnode) == 0) {
+        fd_table_t *fdt = process_fdt(proc);
+        seL4_SetMR(0, fdt_insert(fdt, path_vaddr, (int)flags, vnode->size, vnode));
+    } else {
+        seL4_SetMR(0, -1);
+    }
     uio_destroy(uio);
     process_reply(proc, 1);
 }
@@ -47,7 +57,17 @@ void syscall_write_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Wo
 
     uio_t *uio = uio_init(proc);
     const char *buf_vaddr = (const char *)uio_map(uio, buf, len);
-    seL4_SetMR(0, vfs_write(process_fdt(proc), (int)file, buf_vaddr, (size_t)len));
+    fd_table_t *fdt = process_fdt(proc);
+    fd_entry_t *e = fdt_get_entry(fdt, (int)file);
+    if (e == NULL) {
+        seL4_SetMR(0, -1);
+    } else {
+        vnode_t *vnode = e->vnode;
+        int written = vfs_write(vnode, buf_vaddr, e->offset, (size_t)len);
+        written = ((size_t)written < (size_t)len) ? written : (size_t)len;
+        e->offset += written;
+        seL4_SetMR(0, written);
+    }
     uio_destroy(uio);
     process_reply(proc, 1);
 }
@@ -57,9 +77,29 @@ void syscall_read_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Wor
     seL4_Word len = buffer_size_trunc(arg0);
     seL4_Word buf = arg1;
     seL4_Word file = arg2;
+
     uio_t *uio = uio_init(proc);
     char *buf_vaddr = (char *)uio_map(uio, buf, len);
-    seL4_SetMR(0, vfs_read(process_fdt(proc), (int)file, buf_vaddr, (size_t)len));
+    fd_table_t *fdt = process_fdt(proc);
+    fd_entry_t *e = fdt_get_entry(fdt, (int)file);
+    if (e == NULL) {
+        seL4_SetMR(0, -1);
+    } else {
+        vnode_t *vnode = e->vnode;
+        size_t offset = e->offset;
+        size_t nbyte = (size_t)len;
+        if (offset >= e->size) {
+            seL4_SetMR(0, 0);
+        } else {
+            if (e->size - offset < nbyte) {
+                nbyte = e->size - offset;
+            }
+            int read = vfs_read(vnode, buf_vaddr, offset, nbyte);
+            read = ((size_t)read < nbyte) ? read : (int)nbyte;
+            e->offset += read;
+            seL4_SetMR(0, read);
+        }
+    }
     uio_destroy(uio);
     process_reply(proc, 1);
 }
@@ -114,7 +154,15 @@ void syscall_stat_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Wor
 void syscall_close_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word file = arg0;
-    seL4_SetMR(0, vfs_close(process_fdt(proc), (int)file));
+
+    fd_table_t *fdt = process_fdt(proc);
+    fd_entry_t *e = fdt_get_entry(fdt, (int)file);
+    if (e == NULL) {
+        seL4_SetMR(0, -1);
+    } else {
+        vnode_t *vnode = e->vnode;
+        seL4_SetMR(0, vfs_close(vnode));
+    }
     process_reply(proc, 1);
 }
 
@@ -130,6 +178,33 @@ void syscall_process_create_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
     process_reply(proc, 1);
 }
 
+void syscall_process_status_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
+{
+    // seL4_Word buf = arg0;
+    // seL4_Word max = arg1;
+
+    // uio_t *uio_path = uio_init(proc);
+    // const char *path_vaddr = (const char *)uio_map(uio_path, path, len);
+    // uio_t *uio_buf = uio_init(proc);
+    // char *buf_vaddr = (char *)uio_map(uio_buf, buf, sizeof(sos_stat_t));
+    // seL4_SetMR(0, vfs_stat(path_vaddr, buf_vaddr));
+    // uio_destroy(uio_path);
+    // uio_destroy(uio_buf);
+}
+
+void syscall_time_usleep_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
+{
+    uint64_t now = get_time(), msec = (uint64_t)arg0;
+    while ((get_time() - now)/1000 < msec) { yield(0); }
+    process_reply(proc, 1);
+}
+
+void syscall_time_stamp_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
+{
+    seL4_SetMR(0, get_time());
+    process_reply(proc, 1);
+}
+
 void syscall_handlers_init()
 {
     handlers[SOS_SYSCALL_OPEN] = syscall_open_handler;
@@ -140,6 +215,9 @@ void syscall_handlers_init()
     handlers[SOS_SYSCALL_STAT] = syscall_stat_handler;
     handlers[SOS_SYSCALL_CLOSE] = syscall_close_handler;
     handlers[SOS_SYSCALL_PROC_CREATE] = syscall_process_create_handler;
+    handlers[SOS_SYSCALL_PROC_STATUS] = syscall_process_status_handler;
+    handlers[SOS_SYSCALL_USLEEP] = syscall_time_usleep_handler;
+    handlers[SOS_SYSCALL_STAMP] = syscall_time_stamp_handler;
 }
 
 void *sos_handle_syscall(void *data)
@@ -160,7 +238,7 @@ void *sos_handle_vm_fault(void *data)
 {
     proc_t *proc = (proc_t *)data;
     seL4_Word fault_address = process_get_data0(proc);
-
+//printf("fault vaddr %p\n", fault_address);
     seL4_Word vaddr = fault_address & MASK;
     addrspace_t *addrspace = process_addrspace(proc);
     if (fault_address && addrspace_check_valid_region(addrspace, vaddr)) {

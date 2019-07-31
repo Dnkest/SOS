@@ -72,7 +72,6 @@ add_executable(
     src/utils/kmalloc.c
     src/utils/low_avail_id.c
     src/utils/eventq.c
-    src/utils/pq.c
     src/utils/q.c
     src/utils/circular_id.c
     src/paging.c

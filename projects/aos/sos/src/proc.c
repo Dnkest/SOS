@@ -13,7 +13,7 @@
 
 #include "fs/sos_nfs.h"
 
-#include "utils/low_avail_id.h"
+#include "utils/circular_id.h"
 #include "utils/kmalloc.h"
 #include "vmem_layout.h"
 #include "elfload.h"
@@ -47,7 +47,7 @@ struct proc {
 };
 
 static proc_t *processes[MAX_PROCESS];
-static low_avail_id_t *pids = NULL;
+static circular_id_t *pids = NULL;
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *process_alloc_retype(proc_t *proc, cspace_t *cspace, seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -232,14 +232,14 @@ int process_init(char *app_name, seL4_CPtr ep)
     proc->addrspace = addrspace_create();
     proc->fdt = fdt_init();
 
-    if (pids == NULL) { pids = id_table_init(0, 1, MAX_PROCESS); }
+    if (pids == NULL) { pids = circular_id_init(0, 1, MAX_PROCESS); }
     // for (int i = 0; i < MAX_PROCESS; i++) {
     //     if (processes[i] != NULL && strcmp(processes[i]->app_name, app_name) == 0) {
     //         failed = true;
     //         return false;
     //     }
     // }
-    int id = low_avail_id_alloc(pids, 1);
+    int id = circular_id_alloc(pids, 1);
     printf("                                                  pid = %d\n", id);
     processes[id] = proc;
     proc->id = id;

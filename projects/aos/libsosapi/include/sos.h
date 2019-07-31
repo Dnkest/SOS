@@ -29,6 +29,9 @@
 #define SOS_SYSCALL_PROC_DELETE 9
 #define SOS_SYSCALL_MY_ID       10
 #define SOS_SYSCALL_PROC_STATUS 11
+#define SOS_SYSCALL_PROC_WAIT   12
+#define SOS_SYSCALL_USLEEP      13
+#define SOS_SYSCALL_STAMP       14
 
 /* Endpoint for talking to SOS */
 #define SOS_IPC_EP_CAP     (0x1)

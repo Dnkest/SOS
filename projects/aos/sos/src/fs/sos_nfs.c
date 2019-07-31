@@ -39,7 +39,7 @@ void nfs_read_callback(int err, struct nfs_context *nfs, void *data,
     nfs_d->done = 1;
 }
 
-int sos_nfs_open(struct nfsfh **fh, const char *path, fmode_t mode)
+int sos_nfs_open(struct nfsfh **fh, const char *path, int flags)
 {
     while (!nfs) { yield(0); }
     nfs_data_t nfs_d = { .data = NULL, .err = 0, .done = 0};
@@ -47,7 +47,7 @@ int sos_nfs_open(struct nfsfh **fh, const char *path, fmode_t mode)
     if (sos_nfs_stat(path, 0) == -1) {
         ret = nfs_creat_async(nfs, path, 0666, nfs_callback, &nfs_d);
     } else {
-        ret = nfs_open_async(nfs, path, mode, nfs_callback, &nfs_d);
+        ret = nfs_open_async(nfs, path, flags, nfs_callback, &nfs_d);
     }
     while (!nfs_d.done) { yield(0); }
     *fh = (struct nfsfh *)nfs_d.data;

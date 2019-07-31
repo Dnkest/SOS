@@ -60,7 +60,6 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
             return 0;
         }
         vframe_ref_t vframe = addrspace_lookup_vframe(process_addrspace(proc), user_vaddr_tmp);
-//printf("vfr %u\n", vframe);
         if (vframe == NULL_FRAME) {
             seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
             if (frame_cap == seL4_CapNull) {

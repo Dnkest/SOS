@@ -8,13 +8,15 @@ static struct serial *sHandle = NULL;
 static char *read_vaddr;
 static size_t offset;
 
-int serial_open(fmode_t mode)
+int serial_open(int flags)
 {
     if (sHandle == NULL) {
         sHandle = serial_init();
         if (sHandle == NULL) {
             return -1;
         }
+        return 0;
+    } else if (flags == 1) {
         return 0;
     }
     return -1;

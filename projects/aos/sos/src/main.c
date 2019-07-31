@@ -58,12 +58,6 @@
 #define IRQ_EP_BADGE         BIT(seL4_BadgeBits - 1ul)
 #define IRQ_IDENT_BADGE_BITS MASK(seL4_BadgeBits - 1ul)
 
-
-/*
- * A dummy starting syscall
- */
-#define SOS_SYSCALL0 0
-
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
 extern char __eh_frame_start[];
@@ -233,6 +227,18 @@ void *start_proc_init(void *p)
     process_init("sosh", (seL4_CPtr)p);
 }
 
+void timer_callback(uint32_t id, void *data)
+{
+    printf("{1}got timer %u at %u\n", id, get_time()/1000);
+    register_timer(100000, timer_callback, NULL);
+}
+
+void timer_callback2(uint32_t id, void *data)
+{
+    printf("{2}got timer %u at %u\n", id, get_time()/1000);
+    register_timer(50000, timer_callback2, NULL);
+}
+
 NORETURN void *main_continued(UNUSED void *arg)
 {
     /* Initialise other system compenents here */
@@ -262,10 +268,13 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     /* Initialises the timer */
     printf("Timer init\n");
-    //start_timer(timer_vaddr);
+    start_timer(timer_vaddr);
     /* You will need to register an IRQ handler for the timer here.
      * See "irq.h". */
+    sos_register_irq_handler(meson_timeout_irq(MESON_TIMER_A), true, timer_irq, NULL, NULL);
 
+    //register_timer(1000000, timer_callback, NULL);
+    //register_timer(1000000, timer_callback2, NULL);
     syscall_handlers_init();
 
     //kmalloc_tests();

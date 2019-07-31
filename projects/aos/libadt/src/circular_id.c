@@ -1,7 +1,7 @@
-#include "circular_id.h"
-#include "kmalloc.h"
+#include <adt/circular_id.h>
+#include <stdlib.h>
 
-struct circular_id {
+struct ccircular_id {
     void *base;
     unsigned int capacity;
     unsigned int ptr;
@@ -9,23 +9,24 @@ struct circular_id {
     unsigned int unit;
 };
 
-circular_id_t *circular_id_init(void *base, unsigned int unit, unsigned int capacity)
+ccircular_id_t *ccircular_id_init(void *base, unsigned int unit, unsigned int capacity)
 {
-    circular_id_t *table = (circular_id_t *)kmalloc(sizeof(circular_id_t));
+    ccircular_id_t *table = (ccircular_id_t *)malloc(sizeof(ccircular_id_t));
     table->base = base;
     table->capacity = capacity;
     table->ptr = 0;
-    table->bitmap = (char *)kmalloc(capacity *sizeof(char));
+    table->bitmap = (char *)malloc(capacity *sizeof(char));
+    for (int i = 0; i < table->capacity; i++) { table->bitmap[i] = 0; }
     table->unit = unit;
     return table;
 }
 
-void *circular_id_alloc(circular_id_t *table, unsigned int n)
+void *ccircular_id_alloc(ccircular_id_t *table, unsigned int n)
 {
     unsigned int i = table->ptr;
     int wrapped = 0;
     while (!wrapped) {
-        if (i + n > table->capacity) {
+        if (i + n >= table->capacity) {
             wrapped = 1;
             i = table->ptr = 0;
         }
@@ -50,10 +51,16 @@ void *circular_id_alloc(circular_id_t *table, unsigned int n)
     return -1;
 }
 
-void circular_id_free(circular_id_t *table, void *start, unsigned int n)
+void ccircular_id_free(ccircular_id_t *table, void *start, unsigned int n)
 {
     unsigned int s = (start - table->base)/table->unit;
     for (unsigned int i = 0; i < n; i++) {
         table->bitmap[s+i] = 0;
     }
+}
+
+void ccircular_id_destroy(ccircular_id_t *table)
+{
+    free(table->bitmap);
+    free(table);
 }
