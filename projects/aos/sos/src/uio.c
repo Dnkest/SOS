@@ -24,7 +24,7 @@ struct uio {
 
 uio_t *uio_init(proc_t *proc)
 {
-    if (mapping_addr_table == NULL) { mapping_addr_table = circular_id_init(SOS_UIO, PAGE_SIZE_4K, 10); }
+    if (mapping_addr_table == NULL) { mapping_addr_table = circular_id_init(SOS_UIO, PAGE_SIZE_4K, 128); }
     uio_t *ret = (uio_t *)kmalloc(sizeof(uio_t));
     ret->proc = proc;
     return ret;
@@ -90,6 +90,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
             return 0;
         }
         uio->frame_caps[i] = kernel_frame_cap;
+        //printf("proc %d mapping %p --> %p (%u/%u) done\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
 
         user_vaddr_tmp += PAGE_SIZE_4K;
         kernel_vaddr_tmp += PAGE_SIZE_4K;

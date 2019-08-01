@@ -22,7 +22,7 @@ int fdt_insert(fd_table_t *table, const char *path, int flags, size_t size, vnod
     fd_entry_t *ent = kmalloc(sizeof(fd_entry_t));
     ent->flags = flags;
     ent->size = size;
-    ent->path = path;
+    strcpy(ent->path, path);
     ent->offset = 0;
     ent->vnode = vnode;
     table->entries[id] = ent;

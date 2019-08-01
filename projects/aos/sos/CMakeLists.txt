@@ -73,7 +73,9 @@ add_executable(
     src/utils/low_avail_id.c
     src/utils/eventq.c
     src/utils/q.c
+    src/utils/list.c
     src/utils/circular_id.c
+    src/utils/vmq.c
     src/paging.c
     src/vframe_table.c
     src/globals.c

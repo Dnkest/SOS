@@ -153,7 +153,9 @@ seL4_Error addrspace_map_impl(addrspace_t *addrspace, cspace_t *target_cspace, s
 seL4_Error addrspace_alloc_map_one_page(addrspace_t *addrspace, cspace_t *cspace, seL4_CPtr frame_cap,
                                     seL4_CPtr vspace, seL4_Word vaddr)
 {
+    //printf("allocating %p, %p\n", vspace, vaddr);
     vframe_ref_t vframe = alloc_vframe(frame_cap, vaddr, vspace);
+    //printf("a done\n");
     frame_ref_t frame = frame_from_vframe(vframe);
 
     seL4_Error err = addrspace_map_impl(addrspace, cspace, frame_cap, 

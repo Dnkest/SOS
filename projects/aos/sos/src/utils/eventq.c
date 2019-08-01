@@ -77,7 +77,7 @@ void eventQ_cleanup(void *proc)
 {
     //q_debug(eventQ, debug);
     event_t *e = (event_t *)q_remove(eventQ, comparison, proc);
-    while (resumable(e->c)) {
+    while (e != NULL && resumable(e->c)) {
         resume(e->c, -1);
     }
     kfree(e);

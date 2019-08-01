@@ -65,6 +65,7 @@ void *q_remove(Q q, int (*comparison)(void *, void *), void *data)
             return ret;
         }
     }
+    return NULL;
 }
 
 void q_debug(Q q, void (*debug)(void *))

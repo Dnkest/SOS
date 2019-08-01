@@ -13,6 +13,7 @@
 #include "addrspace.h"
 #include "vmem_layout.h"
 #include "elfload.h"
+#include "mapping.h"
 
 #include "fs/sos_nfs.h"
 #include "fs/fd_table.h"
@@ -28,13 +29,15 @@
 struct proc {
     char app_name[N_NAME];
     int id;
+    int exiting;
 
     ut_t *tcb_ut;
     seL4_CPtr tcb;
 
     ut_t *vspace_ut;
     seL4_CPtr vspace;
-
+    
+    ut_t *ipc_buffer_ut;
     seL4_CPtr ipc_buffer;
 
     cspace_t cspace;
@@ -50,6 +53,7 @@ struct proc {
 
 static proc_t *processes[MAX_PROCESS];
 static circular_id_t *pids = NULL;
+static int any_exits = 0;
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *process_alloc_retype(proc_t *proc, cspace_t *cspace, seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -263,6 +267,10 @@ int process_init(char *app_name, seL4_CPtr ep)
         return false;
     }
 
+    // proc->ipc_buffer_ut = process_alloc_retype(proc, cspace, &proc->ipc_buffer, seL4_ARM_SmallPageObject,
+    //                                               seL4_PageBits);
+    // err = map_frame(cspace, proc->ipc_buffer, proc->vspace, PROCESS_IPC_BUFFER,
+    //                         seL4_AllRights, seL4_ARM_Default_VMAttributes);
     /* Create an IPC buffer */
     proc->ipc_buffer = cspace_alloc_slot(cspace);
     if (proc->ipc_buffer == seL4_CapNull) {
@@ -341,7 +349,7 @@ int process_init(char *app_name, seL4_CPtr ep)
     /* Ensure that the file is an elf file. */
     if (elf_newFile(elf_base, elf_size, &elf_file)) {
         ZF_LOGE("Invalid elf file");
-        return false;
+        return -1;
     }
 
     /* set up the stack */
@@ -375,7 +383,7 @@ int process_init(char *app_name, seL4_CPtr ep)
 void process_delete(proc_t *proc)
 {
     if (proc->id == 0) { return; }
-printf("d1\n");
+//printf("d1\n");
     if (proc->tcb_ut != NULL) {
         ut_free(proc->tcb_ut);
     }
@@ -406,6 +414,7 @@ printf("d1\n");
     circular_id_free(pids, proc->id, 1);
 //printf("d5\n");
     kfree(proc);
+//printf("d6\n");
 }
 
 int process_exists_by_badge(seL4_Word badge)
@@ -413,9 +422,25 @@ int process_exists_by_badge(seL4_Word badge)
     return (int)badge >= BADGE_BASE && processes[badge-BADGE_BASE] != NULL;
 }
 
+void process_set_exiting(int pid)
+{
+    processes[pid]->exiting = 1;
+    any_exits = 1;
+}
+
 int process_exists_by_id(int pid)
 {
     return pid >= 0 && pid < MAX_PROCESS && processes[pid] != NULL;
+}
+
+int process_id_exits(int pid)
+{
+    return processes[pid]->exiting;
+}
+
+int process_any_exits()
+{
+    return any_exits;
 }
 
 proc_t *process_get_by_badge(seL4_Word badge)
@@ -433,6 +458,11 @@ int process_max()
     return MAX_PROCESS;
 }
 
+seL4_CPtr process_get_reply_cap(proc_t *proc)
+{
+    return proc->reply;
+}
+
 void process_set_reply_cap(proc_t *proc, seL4_CPtr reply)
 {
     proc->reply = reply;
@@ -442,6 +472,9 @@ void process_reply(proc_t *proc, unsigned int msg_len)
 {
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, msg_len);
     seL4_Send(proc->reply, reply_msg);
+    cspace_delete(global_cspace(), proc->reply);
+    cspace_free_slot(global_cspace(), proc->reply);
+
 }
 
 char *process_name(proc_t *proc)

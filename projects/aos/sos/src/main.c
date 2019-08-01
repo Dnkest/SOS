@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include <cspace/cspace.h>
+#include <picoro/picoro.h>
 #include <aos/sel4_zf_logif.h>
 #include <aos/debug.h>
 #include "picoro/picoro.h"
@@ -43,6 +44,7 @@
 #include "globals.h"
 #include "proc.h"
 #include "utils/eventq.h"
+#include "utils/vmq.h"
 
 #include <aos/vsyscall.h>
 
@@ -138,10 +140,10 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             eventQ_produce(sos_handle_syscall, (void *)proc);
 
         } else if (proc != NULL && label == seL4_Fault_VMFault) {
-            //printf("(3) badge %u\n", badge);
+            printf("proc %d vm fault at %p\n", process_id(proc), seL4_GetMR(seL4_VMFault_Addr));
 
             process_set_data0(proc, seL4_GetMR(seL4_VMFault_Addr));
-            eventQ_produce(sos_handle_vm_fault, (void *)proc);
+            vmQ_produce(sos_handle_vm_fault, (void *)proc);
 
         } else {
 
@@ -154,7 +156,11 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         }
 
         //printf("consuming\n");
-        eventQ_consume();
+        if(!vmQ_empty()) {
+            vmQ_consume();
+        } else {
+            eventQ_consume();
+        }
     }
 }
 
@@ -280,6 +286,8 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     //kmalloc_tests();
     //id_alloc_tests();
+
+    vmQ_init();
 
     eventQ_init();
     eventQ_produce(paging_init, NULL);

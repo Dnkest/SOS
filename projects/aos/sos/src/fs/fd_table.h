@@ -4,10 +4,11 @@
 
 #include "vnode.h"
 
-#define MAX_FD  255
+#define MAX_FD  16
+#define MAX_PATH 32
 
 typedef struct fd_entry {
-    const char *path;
+    const char path[MAX_PATH];
     int flags;
     size_t offset;
     size_t size;

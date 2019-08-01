@@ -9,6 +9,12 @@ typedef struct proc proc_t;
 
 int process_init(char *app_name, seL4_CPtr ep);
 
+void process_set_exiting(int pid);
+
+int process_id_exits(int pid);
+
+int process_any_exits();
+
 void process_delete(proc_t *proc);
 
 int process_max();
@@ -22,6 +28,8 @@ int process_exists_by_id(int pid);
 proc_t *process_get_by_id(int pid);
 
 void process_reply(proc_t *proc, unsigned int msg_len);
+
+seL4_CPtr process_get_reply_cap(proc_t *proc);
 
 void process_set_reply_cap(proc_t *proc, seL4_CPtr reply);
 

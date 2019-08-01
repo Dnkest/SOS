@@ -1,19 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <adt/linkedlist.h>
+#include <adt/list.h>
 
 struct _it {
     void *data;
     struct _it *next;
 };
 
-typedef struct _list {
+struct _list {
     Iterator head;
-} LinkedList;
+};
 
 Iterator it_create(void *data)
 {
-    Iterator it = malloc(sizeof(struct _it));
+    Iterator it = kmalloc(sizeof(struct _it));
     it->data = data;
     it->next = NULL;
 
@@ -22,7 +22,7 @@ Iterator it_create(void *data)
 
 List list_create()
 {
-    List list = (List) malloc(sizeof(LinkedList));
+    List list = (List) kmalloc(sizeof(struct _list));
     list->head = NULL;
     return list;
 }
@@ -71,7 +71,7 @@ void list_delete(List list, void *data, comparsion p)
 
     if (p(list->head->data, data)) {
         list->head = list->head->next;
-        free(list->head);
+        kfree(list->head);
         return;
     }
 
@@ -81,7 +81,7 @@ void list_delete(List list, void *data, comparsion p)
         cur = cur->next;
         if (p(cur->data, data)) {
             prev->next = cur->next;
-            free(cur);
+            kfree(cur);
         }
     }
 }

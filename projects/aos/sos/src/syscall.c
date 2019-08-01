@@ -12,6 +12,8 @@
 #include "globals.h"
 #include "uio.h"
 #include "vframe_table.h"
+#include "utils/eventq.h"
+#include "utils/vmq.h"
 
 #define MASK 0xfffffffff000
 
@@ -182,9 +184,20 @@ void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
 {
     seL4_Word pid = arg0;
     if (process_exists_by_id((int)pid)) {
-        eventQ_cleanup((void *)process_get_by_id((int)pid));
-        process_delete(process_get_by_id((int)pid));
-        seL4_SetMR(0, 0);
+        // printf("deleting %d(%p), im %d(%p)\n", (int)pid, process_get_by_id((int)pid), 
+        // process_id(proc), proc);
+
+        proc_t *deletee = process_get_by_id((int)pid);
+        if (deletee == proc) {
+            //printf("deleting itself\n");
+            process_set_exiting((int)pid);
+            return;
+        } else {
+            //printf("deletee %p\n", deletee);
+            eventQ_cleanup((void *)deletee);
+            process_delete(deletee);
+            process_reply(proc, 1);
+        }
     } else {
         seL4_SetMR(0, -1);
     }
@@ -225,8 +238,10 @@ void syscall_process_status_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
 void syscall_process_wait_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word pid = arg0;
-    printf("pid %d\n", (int)pid);
-    while (process_exists_by_id((int)pid)) { yield(0); }
+    while (!process_id_exits((int)pid) || ((int)pid == -1 && !process_any_exits())) {
+        yield(0);
+    }
+    syscall_process_delete_handler(proc, pid, 0, 0);
     process_reply(proc, 1);
 }
 
@@ -287,7 +302,7 @@ void *sos_handle_vm_fault(void *data)
     addrspace_t *addrspace = process_addrspace(proc);
     if (fault_address && addrspace_check_valid_region(addrspace, vaddr)) {
         if (!addrspace_vaddr_exists(addrspace, vaddr)) {
-
+            //printf("proc %d needs alloc new\n", process_id(proc));
             seL4_CPtr frame_cap = cspace_alloc_slot(global_cspace());
             if (frame_cap == seL4_CapNull) {
                 free_frame(frame_cap);
@@ -302,7 +317,9 @@ void *sos_handle_vm_fault(void *data)
             
         }
         vframe_ref_t vframe = addrspace_lookup_vframe(addrspace, vaddr);
+//printf("proc %d vframe %u\n", process_id(proc), vframe);
         frame_from_vframe(vframe);
+//printf("proc %d resolved\n", process_id(proc));
         process_reply(proc, 0);
     } else {
         printf("process %d vm fault %p\n", process_id(proc), fault_address);

@@ -28,9 +28,6 @@ void *paging_init(void *p)
 
 void page_out(frame_ref_t frame, unsigned long pos)
 {
-    while (lock == 1) { yield(0); }
-    lock = 1;
-
     seL4_Word tmp = circular_id_alloc(paging_addr_table, 1);
 
     seL4_CPtr local = cspace_alloc_slot(global_cspace());
@@ -48,14 +45,11 @@ void page_out(frame_ref_t frame, unsigned long pos)
     cspace_free_slot(global_cspace(), local);
 
     circular_id_free(paging_addr_table, tmp, 1);
-    lock = 0;
+
 }
 
 void page_in(frame_ref_t frame, unsigned long pos)
 {
-    while (lock == 1) { yield(0); }
-    lock = 1;
-
     seL4_Word tmp = circular_id_alloc(paging_addr_table, 1);
 
     seL4_CPtr local = cspace_alloc_slot(global_cspace());
@@ -73,7 +67,6 @@ void page_in(frame_ref_t frame, unsigned long pos)
     cspace_free_slot(global_cspace(), local);
 
     circular_id_free(paging_addr_table, tmp, 1);
-    lock = 0;
 }
 
 int paging_ready()
