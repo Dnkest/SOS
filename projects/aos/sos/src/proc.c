@@ -17,6 +17,7 @@
 
 #include "fs/sos_nfs.h"
 #include "fs/fd_table.h"
+#include "fs/serial.h"
 
 #include "utils/circular_id.h"
 #include "utils/kmalloc.h"
@@ -244,7 +245,6 @@ int process_init(char *app_name, seL4_CPtr ep)
     int id = circular_id_alloc(pids, 1);
     //printf("                                                  pid = %d\n", id);
     proc->id = id;
-    processes[id] = proc;
     
     /* Create a VSpace */
     proc->vspace_ut = process_alloc_retype(proc, cspace, &proc->vspace, seL4_ARM_PageGlobalDirectoryObject,
@@ -374,6 +374,7 @@ int process_init(char *app_name, seL4_CPtr ep)
         .sp = sp,
     };
     printf("Starting %s at %p\n", app_name, (void *) context.pc);
+    processes[id] = proc;
     err = seL4_TCB_WriteRegisters(proc->tcb, 1, 0, 2, &context);
     ZF_LOGE_IF(err, "Failed to write registers");
 
@@ -383,7 +384,7 @@ int process_init(char *app_name, seL4_CPtr ep)
 void process_delete(proc_t *proc)
 {
     if (proc->id == 0) { return; }
-//printf("d1\n");
+
     if (proc->tcb_ut != NULL) {
         ut_free(proc->tcb_ut);
     }
@@ -405,16 +406,11 @@ void process_delete(proc_t *proc)
     if (proc->cspace_inited) {
         cspace_destroy(&proc->cspace);
     }
-//printf("d2\n");
     addrspace_destory(proc->addrspace);
-//printf("d3\n");
     fdt_destroy(proc->fdt);
-//printf("d4\n");
     processes[proc->id] = NULL;
     circular_id_free(pids, proc->id, 1);
-//printf("d5\n");
     kfree(proc);
-//printf("d6\n");
 }
 
 int process_exists_by_badge(seL4_Word badge)

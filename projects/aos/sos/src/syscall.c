@@ -195,6 +195,7 @@ void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
         } else {
             //printf("deletee %p\n", deletee);
             eventQ_cleanup((void *)deletee);
+            vmQ_cleanup((void *)deletee);
             process_delete(deletee);
             process_reply(proc, 1);
         }
@@ -241,8 +242,10 @@ void syscall_process_wait_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, 
     while (!process_id_exits((int)pid) || ((int)pid == -1 && !process_any_exits())) {
         yield(0);
     }
-    syscall_process_delete_handler(proc, pid, 0, 0);
+    seL4_SetMR(0, pid);
     process_reply(proc, 1);
+    syscall_process_delete_handler(proc, pid, 0, 0);
+
 }
 
 void sleep_callback(uint32_t id, void *data)

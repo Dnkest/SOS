@@ -75,10 +75,14 @@ static void debug(void *a)
 
 void vmQ_cleanup(void *proc)
 {
+    //printf("vm");
     //q_debug(vmQ, debug);
     vm_t *e = (vm_t *)q_remove(vmQ, comparison, proc);
-    while (resumable(e->c)) {
-        resume(e->c, -1);
-    }
+    if (e == NULL) { return; }
+    // while (e != NULL && resumable(e->c)) {
+    //     resume(e->c, -1);
+    // }
     kfree(e);
+    //printf("vm");
+    //q_debug(vmQ, debug);
 }

@@ -29,7 +29,6 @@ endfunction()
 # add apps
 add_subdirectory(apps/tty_test)
 add_subdirectory(apps/sosh)
-add_subdirectory(apps/test_app)
 # add any additional apps here
 
 # add sos itself, this is your OS

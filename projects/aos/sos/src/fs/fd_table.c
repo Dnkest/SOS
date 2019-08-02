@@ -2,6 +2,7 @@
 
 #include "fd_table.h"
 #include "sos_nfs.h"
+#include "serial.h"
 #include "../utils/kmalloc.h"
 #include "../utils/low_avail_id.h"
 
@@ -51,11 +52,13 @@ void fdt_destroy(fd_table_t *table)
     for (int i = 0; i < MAX_FD; i++) {
         fd_entry_t *e = table->entries[i];
         if (e != NULL) {
+            vnode = e->vnode;
             if (strcmp("console", e->path)) {
-                vnode = e->vnode;
                 sos_nfs_close(vnode->fh);
+            } else {
+                serial_close(vnode->fh);
             }
-            kfree(e->vnode);
+            kfree(vnode);
             kfree(e);
         }
     }

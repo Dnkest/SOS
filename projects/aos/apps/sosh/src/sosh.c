@@ -202,6 +202,7 @@ static int exec(int argc, char **argv)
         printf("Child pid=%d\n", pid);
         if (bg == 0) {
             sos_process_wait(pid);
+            seL4_DebugPutChar('k');
         }
     } else {
         printf("Failed!\n");

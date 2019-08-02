@@ -17,12 +17,16 @@ int serial_open(int flags)
         if (sHandle == NULL) {
             return -1;
         }
-        occupied = 1;
-        return 0;
-    } else if (!occupied || flags == 1) {
-        return 0;
+    }
+    if (flags != 1) {
+        if (occupied == 0) {
+            occupied++;
+            return 0;
+        } else {
+            return -1;
+        }
     } else {
-        return -1;
+        return 0;
     }
 }
 
@@ -52,6 +56,6 @@ int serial_read(struct nfsfh *fh, char *buf, size_t unused, size_t len)
 
 int serial_close(struct nfsfh *fh)
 {
-    occupied = 0;
+    if (occupied > 0) { occupied--; }
     return 0;
 }

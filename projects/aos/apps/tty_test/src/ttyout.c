@@ -28,6 +28,7 @@
 #include "ttyout.h"
 
 #include <sel4/sel4.h>
+#include <sos.h>
 
 void ttyout_init(void)
 {
@@ -49,7 +50,7 @@ static size_t sos_debug_print(const void *vData, size_t count)
 size_t sos_write(void *vData, size_t count)
 {
     //implement this to use your syscall
-    return sos_debug_print(vData, count);
+    return sos_sys_write(3, vData, count);
 }
 
 size_t sos_read(void *vData, size_t count)

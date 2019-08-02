@@ -75,10 +75,14 @@ static void debug(void *a)
 
 void eventQ_cleanup(void *proc)
 {
+    //printf("event");
     //q_debug(eventQ, debug);
     event_t *e = (event_t *)q_remove(eventQ, comparison, proc);
-    while (e != NULL && resumable(e->c)) {
-        resume(e->c, -1);
-    }
+    if (e == NULL) { return; }
+    // while (resumable(e->c)) {
+    //     resume(e->c, -1);
+    // }
     kfree(e);
+    //printf("event");
+    //q_debug(eventQ, debug);
 }
