@@ -128,7 +128,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
              * object! */
             sos_handle_irq_notification(&badge);
 
-        } else if (proc != NULL && label == seL4_Fault_NullFault) {
+        } else if (proc != NULL && !process_exiting(proc) && label == seL4_Fault_NullFault) {
             //printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
 
             /* It's not a fault or an interrupt, it must be an IPC

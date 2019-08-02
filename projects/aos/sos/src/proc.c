@@ -50,11 +50,29 @@ struct proc {
     uint64_t start_timestamp;
     seL4_Word data[4];
     seL4_CPtr reply;
+
+    int parents[128];
+    int p_size;
 };
 
 static proc_t *processes[MAX_PROCESS];
 static circular_id_t *pids = NULL;
 static int any_exits = 0;
+
+void process_child_add_parent(proc_t *proc, int pid)
+{
+    proc->parents[proc->p_size++] = pid;
+}
+
+int process_not_killing_parent(proc_t *proc, int pid)
+{
+    for (int i = 0; i < proc->p_size; i++) {
+        if (proc->parents[i] == pid) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *process_alloc_retype(proc_t *proc, cspace_t *cspace, seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -434,6 +452,11 @@ int process_id_exits(int pid)
     return processes[pid]->exiting;
 }
 
+int process_exiting(proc_t *proc)
+{
+    return proc->exiting;
+}
+
 int process_any_exits()
 {
     return any_exits;
@@ -466,8 +489,16 @@ void process_set_reply_cap(proc_t *proc, seL4_CPtr reply)
 
 void process_reply(proc_t *proc, unsigned int msg_len)
 {
+    //printf("proc %p\n", proc);
+    //printf("hahaah %d\n", process_exiting(proc));
+    
+    if (process_exiting(proc)) return;
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, msg_len);
+    
+
+    //printf("1\n");
     seL4_Send(proc->reply, reply_msg);
+//printf("2\n\n");
     cspace_delete(global_cspace(), proc->reply);
     cspace_free_slot(global_cspace(), proc->reply);
 

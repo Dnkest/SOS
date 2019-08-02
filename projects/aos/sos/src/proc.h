@@ -13,6 +13,8 @@ void process_set_exiting(int pid);
 
 int process_id_exits(int pid);
 
+int process_exiting(proc_t *proc);
+
 int process_any_exits();
 
 void process_delete(proc_t *proc);
@@ -26,6 +28,10 @@ proc_t *process_get_by_badge(seL4_Word badge);
 int process_exists_by_id(int pid);
 
 proc_t *process_get_by_id(int pid);
+
+void process_child_add_parent(proc_t *proc, int pid);
+
+int process_not_killing_parent(proc_t *proc, int pid);
 
 void process_reply(proc_t *proc, unsigned int msg_len);
 

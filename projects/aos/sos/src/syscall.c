@@ -183,9 +183,9 @@ void syscall_process_create_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
 void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word pid = arg0;
-    if (process_exists_by_id((int)pid)) {
-        // printf("deleting %d(%p), im %d(%p)\n", (int)pid, process_get_by_id((int)pid), 
-        // process_id(proc), proc);
+    if (process_exists_by_id((int)pid) && process_not_killing_parent(proc, (int)pid)) {
+        printf("deleting %d(%p), im %d(%p)\n", (int)pid, process_get_by_id((int)pid), 
+        process_id(proc), proc);
 
         proc_t *deletee = process_get_by_id((int)pid);
         if (deletee == proc) {
@@ -193,11 +193,13 @@ void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
             process_set_exiting((int)pid);
             return;
         } else {
-            //printf("deletee %p\n", deletee);
+            printf("deletee %p\n", deletee);
+            process_set_exiting((int)pid);
             eventQ_cleanup((void *)deletee);
             vmQ_cleanup((void *)deletee);
             process_delete(deletee);
             process_reply(proc, 1);
+            return;
         }
     } else {
         seL4_SetMR(0, -1);
@@ -239,13 +241,13 @@ void syscall_process_status_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
 void syscall_process_wait_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word pid = arg0;
+    process_child_add_parent(process_get_by_id((int)pid), process_id(proc));
     while (!process_id_exits((int)pid) || ((int)pid == -1 && !process_any_exits())) {
         yield(0);
     }
     seL4_SetMR(0, pid);
     process_reply(proc, 1);
     syscall_process_delete_handler(proc, pid, 0, 0);
-
 }
 
 void sleep_callback(uint32_t id, void *data)
