@@ -24,7 +24,7 @@ struct uio {
 
 uio_t *uio_init(proc_t *proc)
 {
-    if (mapping_addr_table == NULL) { mapping_addr_table = circular_id_init(SOS_UIO, PAGE_SIZE_4K, 128); }
+    if (mapping_addr_table == NULL) { mapping_addr_table = circular_id_init(SOS_UIO, PAGE_SIZE_4K, 96); }
     uio_t *ret = (uio_t *)kmalloc(sizeof(uio_t));
     ret->proc = proc;
     return ret;
@@ -52,7 +52,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
     seL4_Word kernel_vaddr_tmp = kernel_base_vaddr, user_vaddr_tmp = user_base_vaddr;
     for (unsigned int i = 0; i < num_pages; i++) {
 
-        //printf("proc %d mapping %p --> %p (%u/%u)\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
+        printf("proc %d mapping %p --> %p (%u/%u)\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
         seL4_CPtr kernel_frame_cap = cspace_alloc_slot(global_cspace());
 
         if (kernel_frame_cap == seL4_CapNull) {
@@ -83,12 +83,9 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
         assert(err == 0);
         err = map_frame(global_cspace(), kernel_frame_cap, seL4_CapInitThreadVSpace,
                         kernel_vaddr_tmp, seL4_AllRights, seL4_ARM_Default_VMAttributes);
-        assert(err == 0);
-
-        if (err) {
-            ZF_LOGE("mapping user address failed");
-            return 0;
-        }
+        // if (err) {
+        //     printf("err %d\n", err);
+        // }
         uio->frame_caps[i] = kernel_frame_cap;
         //printf("proc %d mapping %p --> %p (%u/%u) done\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
 

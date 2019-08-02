@@ -11,15 +11,15 @@
 #
 cmake_minimum_required(VERSION 3.7.2)
 
-project(tty_test C)
+project(ben C)
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -u __vsyscall_ptr")
 
-add_executable(tty_test EXCLUDE_FROM_ALL src/tty_test.c src/ttyout.c)
-target_include_directories(tty_test PRIVATE include)
-target_link_libraries(tty_test muslc sel4 sosapi utils)
+add_executable(ben EXCLUDE_FROM_ALL src/ben.c src/benchmark.c)
+target_include_directories(ben PRIVATE include)
+target_link_libraries(ben muslc sel4 sosapi)
 
 # warn about everything
 add_compile_options(-Wall -Werror -W -Wextra)
 
-add_app(tty_test)
+add_app(ben)

@@ -25,7 +25,7 @@ void *circular_id_alloc(circular_id_t *table, unsigned int n)
     unsigned int i = table->ptr;
     int wrapped = 0;
     while (!wrapped) {
-        if (i + n > table->capacity) {
+        if (i + n >= table->capacity) {
             wrapped = 1;
             i = table->ptr = 0;
         }
