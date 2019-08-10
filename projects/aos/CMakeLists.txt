@@ -30,6 +30,7 @@ endfunction()
 add_subdirectory(apps/tty_test)
 add_subdirectory(apps/sosh)
 add_subdirectory(apps/ben)
+add_subdirectory(apps/muo_gui_ce_shi)
 # add any additional apps here
 
 # add sos itself, this is your OS
