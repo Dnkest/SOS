@@ -25,6 +25,7 @@
 #define SOS_FRAME_TABLE      (0x8100000000)
 #define SOS_FRAME_DATA       (0x8200000000)
 #define SOS_KMALLOC          (0x500000000000)
+#define SOS_KMALLOC_DATA     (0x510000000000)
 #define SOS_PAGING           (0x600000000000)
 #define SOS_UIO              (0x700000000000)
 #define SOS_HEAP_BASE        (0x800000000000)
