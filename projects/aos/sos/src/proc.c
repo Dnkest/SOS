@@ -58,22 +58,6 @@ struct proc {
 
 static proc_t *processes[MAX_PROCESS];
 static circular_id_t *pids = NULL;
-static int any_exits = 0;
-
-void process_child_add_parent(proc_t *proc, int pid)
-{
-    proc->parents[proc->p_size++] = pid;
-}
-
-int process_not_killing_parent(proc_t *proc, int pid)
-{
-    for (int i = 0; i < proc->p_size; i++) {
-        if (proc->parents[i] == pid) {
-            return 0;
-        }
-    }
-    return 1;
-}
 
 /* helper to allocate a ut + cslot, and retype the ut into the cslot */
 static ut_t *process_alloc_retype(proc_t *proc, cspace_t *cspace, seL4_CPtr *cptr, seL4_Word type, size_t size_bits)
@@ -440,7 +424,6 @@ int process_exists_by_badge(seL4_Word badge)
 void process_set_exiting(int pid)
 {
     processes[pid]->exiting = 1;
-    any_exits = 1;
 }
 
 int process_exists_by_id(int pid)
@@ -456,11 +439,6 @@ int process_id_exits(int pid)
 int process_exiting(proc_t *proc)
 {
     return proc->exiting;
-}
-
-int process_any_exits()
-{
-    return any_exits;
 }
 
 proc_t *process_get_by_badge(seL4_Word badge)

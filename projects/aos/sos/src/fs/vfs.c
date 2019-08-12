@@ -15,14 +15,9 @@ int vfs_open(const char *path, int flags, vnode_t **vnode)
         //printf("openning console %x\n", flags);
 
         *vnode = vnode_init(serial_close, serial_read, serial_write);
-        while (serial_open(flags) != 0) {
-            void *stop = yield(0);
-            //printf("stop %d\n", stop);
-            if ((int)stop == -1) {
-                kfree(*vnode);
-                return -1;
-            }
-        }
+        if (serial_open(flags) != 0) { return -1; }
+        
+        /* TODO: console has infinite size. */
         (*vnode)->size = 0xffffffffffffffff;
 
         return 0;

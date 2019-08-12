@@ -23,17 +23,16 @@ int serial_open(int flags)
             return -1;
         }
         serial_register_handler(sHandle, serial_read_handler);
+        occupied = 1;
+    } else {
+        // if (flags != 1) {
+        //     while (occupied) { yield(NULL); }
+        //     occupied = 1;
+        // }
+        /* TODO: waits for console. */
+        return -1;
     }
-    // if (flags != 1) {
-    //     if (occupied == 0) {
-    //         occupied++;
-    //         return 0;
-    //     } else {
-    //         return -1;
-    //     }
-    // } else {
-        return 0;
-    //}
+    return 0;
 }
 
 int serial_write(struct nfsfh *fh, char *msg, size_t offset, size_t len)
@@ -47,15 +46,13 @@ int serial_read(struct nfsfh *fh, char *buf, size_t unused, size_t len)
     offset = 0;
 
     while (read_vaddr[offset-1] != '\n' && offset < len) {
-        //printf("??\n");
         yield(0);
     }
-    //printf("return\n");
     return offset;
 }
 
 int serial_close(struct nfsfh *fh)
 {
-    //if (occupied > 0) { occupied--; }
+    occupied = 0;
     return 0;
 }

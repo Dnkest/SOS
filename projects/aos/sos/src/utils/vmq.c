@@ -59,7 +59,6 @@ static void debug(void *a)
 void vmQ_consume()
 {
     if (!vmQ_empty()) {
-        //q_debug(vmQ, debug);
         vm_t *front = (vm_t *)q_front(vmQ);
         resume(front->c, front->data);
         if (resumable(front->c)) {
@@ -78,14 +77,7 @@ static int comparison(void *a, void *b)
 
 void vmQ_cleanup(void *proc)
 {
-    //printf("vm");
-    //q_debug(vmQ, debug);
     vm_t *e = (vm_t *)q_remove(vmQ, comparison, proc);
     if (e == NULL) { return; }
-    // while (e != NULL && resumable(e->c)) {
-    //     resume(e->c, -1);
-    // }
     kfree(e);
-    //printf("vm");
-    //q_debug(vmQ, debug);
 }

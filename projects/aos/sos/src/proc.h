@@ -29,10 +29,6 @@ int process_exists_by_id(int pid);
 
 proc_t *process_get_by_id(int pid);
 
-void process_child_add_parent(proc_t *proc, int pid);
-
-int process_not_killing_parent(proc_t *proc, int pid);
-
 void process_reply(proc_t *proc, unsigned int msg_len);
 
 seL4_CPtr process_get_reply_cap(proc_t *proc);

@@ -11,8 +11,6 @@
 
 static circular_id_t *mapping_addr_table;
 
-static char lock = 0;
-
 struct uio {
     proc_t *proc;
 

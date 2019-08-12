@@ -49,7 +49,7 @@ void *circular_id_alloc(circular_id_t *table, unsigned int n)
             i++;
         }
     }
-    return 0;
+    return NULL;
 }
 
 void circular_id_free(circular_id_t *table, void *start, unsigned int n)

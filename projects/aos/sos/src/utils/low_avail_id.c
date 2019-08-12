@@ -41,6 +41,7 @@ void *low_avail_id_alloc(low_avail_id_t *table, unsigned int n)
             i++;
         }
     }
+    return NULL;
 }
 
 void low_avail_id_free(low_avail_id_t *table, void *start, unsigned int n)

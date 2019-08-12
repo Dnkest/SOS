@@ -27,11 +27,8 @@ void cap_list_destroy(cap_list_t *list);
 
 void addrspace_destory(addrspace_t *addrspace)
 {
-//printf("a1\n");
     pagetable_destroy(addrspace->table);
-//printf("a2\n");
     cap_list_destroy(addrspace->cap_list);
-//printf("a3\n");
     region_t *cur = addrspace->regions, *tmp;
 
     while (cur != NULL) {
@@ -65,7 +62,7 @@ void addrspace_define_region(addrspace_t *addrspace, seL4_Word vaddr,
     region->read =  permissions & PF_R || permissions & PF_X;
     region->write = permissions & PF_W;
     region->next = NULL;
-    printf("Defined region: %p-->%p, %d, %d\n",region->base,region->top,region->read ,region->write);
+    // printf("Defined region: %p-->%p, %d, %d\n",region->base,region->top,region->read ,region->write);
 
     if (addrspace->regions == NULL) {
         addrspace->regions = region;
