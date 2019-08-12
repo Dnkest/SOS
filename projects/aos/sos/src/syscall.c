@@ -183,24 +183,20 @@ void syscall_process_create_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1
 void syscall_process_delete_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     seL4_Word pid = arg0;
-    if (process_exists_by_id((int)pid) && process_not_killing_parent(proc, (int)pid)) {
-        printf("deleting %d(%p), im %d(%p)\n", (int)pid, process_get_by_id((int)pid), 
-        process_id(proc), proc);
+    if (process_exists_by_id((int)pid)) {
+        // printf("deleting %d(%p), im %d(%p)\n", (int)pid, process_get_by_id((int)pid), process_id(proc), proc);
 
         proc_t *deletee = process_get_by_id((int)pid);
+        process_set_exiting((int)pid);
         if (deletee == proc) {
-            //printf("deleting itself\n");
-            process_set_exiting((int)pid);
-            return;
-        } else {
-            printf("deletee %p\n", deletee);
-            process_set_exiting((int)pid);
-            eventQ_cleanup((void *)deletee);
-            vmQ_cleanup((void *)deletee);
+            // do nothing.
+        } else if (!eventQ_find(deletee)) {
             process_delete(deletee);
-            process_reply(proc, 1);
-            return;
+        } else {
+            while (process_exists_by_id((int)pid)) { yield(NULL); }
+            eventQ_cleanup((void *)deletee);
         }
+        seL4_SetMR(0, 0);
     } else {
         seL4_SetMR(0, -1);
     }
@@ -258,6 +254,7 @@ void sleep_callback(uint32_t id, void *data)
 void syscall_time_usleep_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)
 {
     register_timer(arg0 * 1000, sleep_callback, (void *)proc);
+
 }
 
 void syscall_time_stamp_handler(proc_t *proc, seL4_Word arg0, seL4_Word arg1, seL4_Word arg2)

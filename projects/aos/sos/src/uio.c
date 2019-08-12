@@ -80,9 +80,7 @@ seL4_Word uio_map(uio_t *uio, seL4_Word user_vaddr, seL4_Word size)
         assert(err == 0);
         err = map_frame(global_cspace(), kernel_frame_cap, seL4_CapInitThreadVSpace,
                         kernel_vaddr_tmp, seL4_AllRights, seL4_ARM_Default_VMAttributes);
-        // if (err) {
-        //     printf("err %d\n", err);
-        // }
+        assert(err == 0 || err == 8);
         uio->frame_caps[i] = kernel_frame_cap;
         //printf("proc %d mapping %p --> %p (%u/%u) done\n", process_id(uio->proc), user_vaddr_tmp, kernel_vaddr_tmp, i+1, num_pages);
 

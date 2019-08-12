@@ -129,7 +129,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             sos_handle_irq_notification(&badge);
 
         } else if (proc != NULL && !process_exiting(proc) && label == seL4_Fault_NullFault) {
-            //printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
+            // printf("proc %d syscall %u\n", process_id(proc), seL4_GetMR(0));
 
             /* It's not a fault or an interrupt, it must be an IPC
              * message from app! */
@@ -140,7 +140,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
             eventQ_produce(sos_handle_syscall, (void *)proc);
 
         } else if (proc != NULL && label == seL4_Fault_VMFault) {
-            printf("proc %d vm fault at %p\n", process_id(proc), seL4_GetMR(seL4_VMFault_Addr));
+            // printf("proc %d vm fault at %p\n", process_id(proc), seL4_GetMR(seL4_VMFault_Addr));
 
             process_set_data0(proc, seL4_GetMR(seL4_VMFault_Addr));
             vmQ_produce(sos_handle_vm_fault, (void *)proc);

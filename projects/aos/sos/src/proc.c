@@ -14,6 +14,7 @@
 #include "vmem_layout.h"
 #include "elfload.h"
 #include "mapping.h"
+#include "utils/eventq.h"
 
 #include "fs/sos_nfs.h"
 #include "fs/fd_table.h"
@@ -489,19 +490,11 @@ void process_set_reply_cap(proc_t *proc, seL4_CPtr reply)
 
 void process_reply(proc_t *proc, unsigned int msg_len)
 {
-    //printf("proc %p\n", proc);
-    //printf("hahaah %d\n", process_exiting(proc));
-    
-    if (process_exiting(proc)) return;
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, msg_len);
-    
-
-    //printf("1\n");
     seL4_Send(proc->reply, reply_msg);
-//printf("2\n\n");
     cspace_delete(global_cspace(), proc->reply);
     cspace_free_slot(global_cspace(), proc->reply);
-
+    if (process_exiting(proc)) { process_delete(proc); }
 }
 
 char *process_name(proc_t *proc)

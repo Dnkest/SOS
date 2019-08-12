@@ -49,9 +49,17 @@ void vmQ_produce(void *fun(void *arg), void *data)
     vmQ_push(c, data);
 }
 
+
+static void debug(void *a)
+{
+    printf("%p{%p}->", a, ((vm_t *)a)->data);
+}
+
+
 void vmQ_consume()
 {
     if (!vmQ_empty()) {
+        //q_debug(vmQ, debug);
         vm_t *front = (vm_t *)q_front(vmQ);
         resume(front->c, front->data);
         if (resumable(front->c)) {
@@ -66,11 +74,6 @@ void vmQ_consume()
 static int comparison(void *a, void *b)
 {
     return ((vm_t *)a)->data == b;
-}
-
-static void debug(void *a)
-{
-    printf("%p{%p}->", a, ((vm_t *)a)->data);
 }
 
 void vmQ_cleanup(void *proc)

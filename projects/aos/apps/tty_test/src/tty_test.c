@@ -42,16 +42,17 @@ int main(void)
     sosapi_init_syscall_table();
 
     /* initialise communication */
-    ttyout_init();
+    //ttyout_init();
 
 
-    int in = open("console", 1);
-    assert(in >= 0);
+    //int in = open("console", 1);
+    //assert(in >= 0);
 
-    printf("task:\tHello world, I'm\ttty_test!\n");
-    while (1) {
-        sos_sys_usleep(1000);
-        printf("tick\n");
-    }
+    //printf("task:\tHello world, I'm\ttty_test!\n");
+    // while (1) {
+        
+    //     sos_sys_usleep(1000);
+    //     printf("tick\n");
+    // }
     return 0;
 }

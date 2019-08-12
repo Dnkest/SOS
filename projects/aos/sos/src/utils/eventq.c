@@ -49,8 +49,14 @@ void eventQ_produce(void *fun(void *arg), void *data)
     eventQ_push(c, data);
 }
 
+static void debug(void *a)
+{
+    printf("%p{%p}->", a, ((event_t *)a)->data);
+}
+
 void eventQ_consume()
 {
+    //q_debug(eventQ, debug);
     if (!eventQ_empty()) {
         event_t *front = (event_t *)q_front(eventQ);
         resume(front->c, front->data);
@@ -68,21 +74,14 @@ static int comparison(void *a, void *b)
     return ((event_t *)a)->data == b;
 }
 
-static void debug(void *a)
-{
-    printf("%p{%p}->", a, ((event_t *)a)->data);
-}
-
 void eventQ_cleanup(void *proc)
 {
-    //printf("event");
-    //q_debug(eventQ, debug);
     event_t *e = (event_t *)q_remove(eventQ, comparison, proc);
     if (e == NULL) { return; }
-    // resumable(e->c)) {
-    //     resume(e->c, -1);
-    // }
     kfree(e);
-    //printf("event");
-    //q_debug(eventQ, debug);
+}
+
+int eventQ_find(void *proc)
+{
+    return q_find(eventQ, comparison, proc) != NULL;
 }

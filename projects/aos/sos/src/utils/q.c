@@ -68,6 +68,16 @@ void *q_remove(Q q, int (*comparison)(void *, void *), void *data)
     return NULL;
 }
 
+void *q_find(Q q, int (*comparison)(void *, void *), void *data)
+{
+    for (int i = 0; i < q->size; i++) {
+        if (comparison(q->arr[i], data)) {
+            return q->arr[i];
+        }
+    }
+    return NULL;
+}
+
 void q_debug(Q q, void (*debug)(void *))
 {
     for (int i =0 ; i < q->size; i++) {
