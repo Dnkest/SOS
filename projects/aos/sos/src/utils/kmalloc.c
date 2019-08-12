@@ -94,17 +94,13 @@ void list_appen(list *l, void *p, size_t size)
     node n = { .location = p,
                 .size = size };
     l->nodes[l->size++] = n;
-    if (l->size == CAPACITY) {
+    if (l->size == CAPACITY && l->next == NULL) {
         l->next = list_ini();
     }
 }
 
 void list_del_index(list *c, int i)
 {
-    if (c->size == 1) {
-        --c->size;
-        return;
-    }
     list *t = c;
     while (t->next != NULL && t->next->size != 0) {
         t = t->next;

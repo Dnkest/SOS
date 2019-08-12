@@ -25,14 +25,15 @@ void *low_avail_id_alloc(low_avail_id_t *table, unsigned int n)
         if (i + n > table->capacity) { return -1; }
         
         if (!table->bitmap[i]) {
-            unsigned int j;
-            for (j = 0; j < n; j++) {
+            int f = 0;
+            for (unsigned int j = 0; j < n; j++) {
                 if (table->bitmap[i+j]) {
                     i += (j + 1);
-                    break;
+                    f = 1;
                 }
             }
-            if (j == n) {
+            if (!f) {
+                unsigned int j;
                 for (j = 0; j < n; j++) { table->bitmap[i+j] = 1; }
                 return table->base + i * table->unit;
             }

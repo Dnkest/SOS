@@ -1,5 +1,6 @@
 #include "circular_id.h"
 #include "kmalloc.h"
+#include <stdio.h>
 
 struct circular_id {
     void *base;
@@ -31,14 +32,15 @@ void *circular_id_alloc(circular_id_t *table, unsigned int n)
         }
         
         if (!table->bitmap[i]) {
-            unsigned int j;
-            for (j = 0; j < n; j++) {
+            int f = 0;
+            for (unsigned int j = 0; j < n; j++) {
                 if (table->bitmap[i+j]) {
                     i += (j + 1);
-                    break;
+                    f = 1;
                 }
             }
-            if (j == n) {
+            if (!f) {
+                unsigned int j;
                 for (j = 0; j < n; j++) { table->bitmap[i+j] = 1; }
                 table->ptr = i+j;
                 return table->base + i * table->unit;
@@ -47,7 +49,7 @@ void *circular_id_alloc(circular_id_t *table, unsigned int n)
             i++;
         }
     }
-    return -1;
+    return 0;
 }
 
 void circular_id_free(circular_id_t *table, void *start, unsigned int n)

@@ -284,7 +284,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     //register_timer(1000000, timer_callback2, NULL);
     syscall_handlers_init();
 
-    kmalloc_tests();
+    // kmalloc_tests();
     //id_alloc_tests();
 
     vmQ_init();
